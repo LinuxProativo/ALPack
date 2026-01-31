@@ -7,7 +7,6 @@ use crate::utils::_parse_key_value;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;
-use std::path::Path;
 
 macro_rules! collect_args {
     ($args:expr, $target:expr) => {
@@ -186,7 +185,7 @@ impl Aports {
 
             apkbuild_dirs.iter().try_for_each(|dir| {
                 utils::copy_dir_recursive(
-                    Path::new(format!("{rootfs_dir}/build/aports/{dir}").as_str()),
+                    format!("{rootfs_dir}/build/aports/{dir}").as_ref(),
                     output.as_ref(),
                 )
             })?;
