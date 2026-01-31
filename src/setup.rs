@@ -16,6 +16,9 @@ use std::path::Path;
 use std::{fs, io};
 use tar::Archive;
 
+pub const DEF_PACKAGES: &str =
+    "alpine-sdk autoconf automake cmake glib-dev glib-static libtool go xz";
+
 pub struct Setup {
     name: String,
     remaining_args: Vec<String>,
@@ -160,7 +163,7 @@ impl Setup {
             Command::run(
                 dest_rootfs,
                 None,
-                Some("apk add alpine-sdk autoconf automake cmake go xz".to_string()),
+                Some(format!("apk add {DEF_PACKAGES}")),
                 true,
                 true,
                 false,

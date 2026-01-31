@@ -1,20 +1,20 @@
 [package]
 name = "ALPack"
-version = "3.1.0"
+version = "3.1.1"
 edition = "2024"
 
 [dependencies]
 pico-args = { version = "0.5" }
-ureq = { version = "3.0", features = ["charset"] }
+ureq = { version = "3.1", features = ["charset"] }
 scraper = { version = "0.25" }
-regex = { version = "1.11" }
-indicatif = {  version = "0.18" }
+regex = { version = "1.12" }
+indicatif = { version = "0.18" }
 flate2 = { version = "1.1" }
 tar = { version = "0.4" }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 toml = {  version = "0.9" }
-walkdir_minimal = {  version = "1.0" }
-which = {  version = "8.0" }
+walkdir_minimal = { version = "1.0" }
+which = { version = "8.0" }
 
 [profile.release]
 opt-level = "z"

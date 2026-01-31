@@ -1,5 +1,6 @@
 use crate::command::Command;
 use crate::settings::Settings;
+use crate::setup::DEF_PACKAGES;
 use crate::utils::_parse_key_value;
 use crate::{parse_key_value, utils};
 
@@ -34,6 +35,7 @@ impl Builder {
         }
 
         let mut cmd_args = Vec::new();
+        let mut concat_args = Vec::new();
         let mut apkbuild_file = String::new();
 
         let sett = Settings::load_or_create();
@@ -87,6 +89,8 @@ impl Builder {
                     fs::copy(apkbuild_file.clone(), &dest_file)?;
 
                     Self::run_abuild(rootfs_dir.clone(), dir_name)?;
+                } else if file_path.is_dir() {
+                    concat_args.push(apkbuild_file);
                 } else {
                     eprintln!(
                         "\x1b[1;33mWarning\x1b[0m: Invalid file: {}, expected 'APKBUILD'",
@@ -101,7 +105,9 @@ impl Builder {
             }
         }
 
-        for p in cmd_args {
+        concat_args.extend(cmd_args);
+
+        for p in concat_args {
             let path = Path::new(&p);
             let (pkg_name, mut dir_name): (String, String);
             let mut copy_only_apkbuild = false;
@@ -210,15 +216,16 @@ impl Builder {
     fn run_abuild(rootfs: String, dir_name: String) -> Result<(), Box<dyn Error>> {
         let cmd = format!(
             "
-            type abuild > /dev/null || apk add alpine-sdk autoconf automake
+            type abuild > /dev/null || apk add {a}
             HOME=/build
             test -f /etc/apk/keys/{u}*.rsa.pub && exit
             rm -rf /build/.abuild
             mkdir -p /build
             abuild-keygen -a -n
             cp -v /build/.abuild/{u}*.rsa.pub /etc/apk/keys/
-        ",
-            u = env::var("USER").unwrap()
+            ",
+            u = env::var("USER").unwrap(),
+            a = DEF_PACKAGES
         );
 
         Command::run(rootfs.clone(), None, Some(cmd), false, false, false)?;

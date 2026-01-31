@@ -92,6 +92,13 @@ impl Command {
     fn build_proot_options(rootfs: String, rootfs_args: String, no_extra_binds: bool, no_group: bool) -> String {
         let mut proot_options = format!("-R {rootfs} --bind=/media --bind=/mnt {rootfs_args}");
 
+        if no_group {
+            proot_options.push_str(format!(
+                " --bind={rootfs}/etc/group:/etc/group \
+                  --bind={rootfs}/etc/passwd:/etc/passwd").as_str()
+            );
+        }
+
         if !no_extra_binds {
             if Path::new("/etc/asound.conf").exists() {
                 proot_options.push_str(" --bind=/etc/asound.conf");
@@ -110,13 +117,6 @@ impl Command {
             }
             if Path::new("/usr/share/themes").exists() {
                 proot_options.push_str(" --bind=/usr/share/themes");
-            }
-
-            if no_group {
-                proot_options.push_str(format!(
-                    " --bind={rootfs}/etc/group:/etc/group \
-                    --bind={rootfs}/etc/passwd:/etc/passwd").as_str()
-                );
             }
 
             if let Ok(entries) = fs::read_dir("/usr/share/icons") {
