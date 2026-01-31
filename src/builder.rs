@@ -153,7 +153,12 @@ impl Builder {
                 }
             }
 
-            let dest_dir = format!("{}/build/{}", rootfs_dir, dir_name);
+            let folder_name = Path::new(&dir_name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&dir_name);
+
+            let dest_dir = format!("{}/build/", rootfs_dir);
             let build_dir = Path::new(&dest_dir);
             fs::create_dir_all(build_dir)?;
 
@@ -161,11 +166,10 @@ impl Builder {
                 let dest_file = build_dir.join("APKBUILD");
                 fs::copy(pkg_name.clone(), &dest_file)?;
             } else {
-                let dest_path = build_dir.parent();
-                utils::copy_dir_recursive(dir_name.as_ref(), dest_path.unwrap())?;
+                utils::copy_dir_recursive(dir_name.as_ref(), build_dir)?;
             }
 
-            Self::run_abuild(rootfs_dir.clone(), dir_name)?;
+            Self::run_abuild(rootfs_dir.clone(), folder_name.to_string())?;
         }
 
         Ok(())
@@ -235,7 +239,7 @@ impl Builder {
             cd /build/{dir_name}
             abuild -r -F
             find \"/build/packages/build/{u}\" -name \"$apkbuild_name\"*.apk -exec apk add --allow-untrusted {{}} \\;
-        ", u = utils::get_arch());
+        ", u = utils::get_arch()); // todo: package name for install apk
 
         Command::run(rootfs, None, Some(cmd), true, true, true)?;
 

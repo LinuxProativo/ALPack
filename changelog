@@ -1,4 +1,5 @@
 Fri Jan 30 21:19:00 -03 2026:
+    - fix copy apkbuild folder to build folder
     - fallback if --apkbuild is dir
     - fix no_group option
     - add default install: glib-dev glib-static libtool
