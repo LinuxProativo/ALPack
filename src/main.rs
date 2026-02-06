@@ -35,7 +35,8 @@ Available parameters:
         setup                   Initialize or configure the rootfs environment
         run                     Execute command inside the rootfs
         config                  Display or modify global configuration
-        aports                  Manage local aports repositories
+        aports                  Manage local aports repository
+        aptree                  Manage local Adélie Package Tree repository
         builder                 Build utility for packages and images
         apk                     Run the Alpine package manager (apk)
         add | install <ARGS>    Install packages into the rootfs
@@ -67,6 +68,13 @@ Options for 'aports':
     -R, --rootfs <DIR>          Specify rootfs directory
         --rootfs=<DIR>          Specify rootfs directory (inline)
 
+Options for 'aptree':
+    -u, --update                Update the local aptree repository to the latest version
+    -s, --search=<PKG>          Search for a package in the Adélie aptree
+    -g, --get=<PKG>             Download the APKBUILD from the Adélie aptree
+    -R, --rootfs <DIR>          Specify rootfs directory
+        --rootfs=<DIR>          Specify rootfs directory (inline)
+
 Options for 'builder':
     -a, --apkbuild <APKBUILD>   Use a specific APKBUILD file as input
         --apkbuild=<APKBUILD>   Use a specific APKBUILD file as input (inline)
@@ -76,6 +84,7 @@ Options for 'builder':
 Options for 'run':
     -0, --root                  Run with root privileges inside rootfs
     -i, --ignore-extra-binds    Ignore additional bind mounts
+    -n, --no-groups             Do not bind host's passwd and group files
     -b, --bind-args <ARGS>      Additional bind arguments (can be inline or next argument)
         --bind-args=<ARGS>      Additional bind arguments (inline)
     -c, --command <CMD>         Command to execute inside rootfs (can be repeated)
