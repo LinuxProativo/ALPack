@@ -1,17 +1,16 @@
 use crate::command::Command;
 use crate::parse_key_value;
 use crate::settings::Settings;
-use crate::utils::_parse_key_value;
 use std::collections::VecDeque;
 use std::error::Error;
 
-pub struct Run {
-    name: String,
+pub struct Run<'a> {
+    name: &'a str,
     remaining_args: Vec<String>,
 }
 
-impl Run {
-    pub fn new(name: String, remaining_args: Vec<String>) -> Self {
+impl<'a> Run<'a> {
+    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
         Run {
             name,
             remaining_args,
@@ -20,7 +19,7 @@ impl Run {
 
     pub fn run(&self) -> Result<(), Box<dyn Error>> {
         let sett = Settings::load_or_create();
-        let mut rootfs_dir: String = sett.set_rootfs();
+        let mut rootfs_dir = sett.set_rootfs();
         let mut args: VecDeque<_> = self.remaining_args.clone().into();
 
         let mut cmd_args = Vec::new();

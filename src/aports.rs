@@ -1,48 +1,20 @@
 use crate::command::Command;
-use crate::parse_key_value;
 use crate::settings::Settings;
 use crate::utils;
-use crate::utils::_parse_key_value;
+use crate::utils::SEPARATOR;
+use crate::{collect_args, collect_matches, parse_key_value};
 
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;
 
-macro_rules! collect_args {
-    ($args:expr, $target:expr) => {
-        while let Some(arg) = $args.pop_front() {
-            if arg.starts_with("-") {
-                $args.push_front(arg);
-                break;
-            }
-            $target.push(arg.to_string());
-        }
-    };
-}
-
-macro_rules! collect_matches {
-    ($pkgs:expr, $content:expr, $result:expr) => {
-        for pkg in $pkgs {
-            for line in $content
-                .lines()
-                .filter(|line| line.contains(&format!("/{}/", pkg)))
-            {
-                if !$result.is_empty() {
-                    $result.push('\n');
-                }
-                $result.push_str(line);
-            }
-        }
-    };
-}
-
-pub struct Aports {
-    name: String,
+pub struct Aports<'a> {
+    name: &'a str,
     remaining_args: Vec<String>,
 }
 
-impl Aports {
-    pub fn new(name: String, remaining_args: Vec<String>) -> Self {
+impl<'a> Aports<'a> {
+    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
         Aports {
             name,
             remaining_args,
@@ -60,7 +32,7 @@ impl Aports {
         }
 
         let sett = Settings::load_or_create();
-        let mut rootfs_dir: String = sett.set_rootfs();
+        let mut rootfs_dir = sett.set_rootfs();
         let (mut search_pkg, mut get_pkg) = (Vec::new(), Vec::new());
         let mut output = (!sett.output_dir.is_empty())
             .then(|| sett.output_dir)
@@ -125,7 +97,7 @@ impl Aports {
                 git fetch --depth=1 --filter=tree:0
                 git ls-tree -r HEAD --name-only | grep -E \"(community|main|testing)\" > ../aports-database
             ".to_string());
-            Command::run(rootfs_dir.clone(), None, cmd, true, true, false)?;
+            Command::run(&rootfs_dir, None, cmd, true, true, false)?;
 
             if search_pkg.is_empty() && get_pkg.is_empty() {
                 return Ok(());

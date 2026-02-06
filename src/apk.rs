@@ -2,16 +2,16 @@ use crate::command::Command;
 use crate::settings::Settings;
 use std::error::Error;
 
-pub struct Apk {
-    name: String,
+pub struct Apk<'a> {
+    name: &'a str,
     command: Option<String>,
     remaining_args: Vec<String>,
     rootfs: Option<String>,
 }
 
-impl Apk {
+impl<'a> Apk<'a> {
     pub fn new(
-        name: String,
+        name: &'a str,
         command: Option<String>,
         remaining_args: Vec<String>,
         rootfs: Option<String>,
@@ -48,11 +48,6 @@ impl Apk {
     /// # Returns
     /// - `Ok(())` on success.
     /// - `Err(Box<dyn Error>)` if execution fails.
-    ///
-    /// # Example
-    /// ```
-    /// self.run_apk("add")?;
-    /// ```
     fn run_apk(&self, cmd: &str) -> Result<(), Box<dyn Error>> {
         let get_rootfs = match self.rootfs.clone().unwrap_or_default().is_empty() {
             false => self.rootfs.clone().unwrap(),

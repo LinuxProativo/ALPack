@@ -9,7 +9,7 @@ pub struct Command;
 
 impl Command {
     pub fn run(
-        rootfs: String,
+        rootfs: &str,
         args_bind: Option<String>, cmd: Option<String>,
         use_root: bool, ignore_extra_bind: bool, no_group: bool,
     ) -> Result<i32, Box<dyn std::error::Error>> {
@@ -83,13 +83,7 @@ impl Command {
     ///
     /// # Returns
     /// * `String` - A full string of PRoot options to be passed to the command.
-    ///
-    /// # Example
-    /// ```
-    /// let opts = build_proot_options("/my/rootfs".into(), "--cwd=/home/user".into(), false);
-    /// println!("Proot options: {}", opts);
-    /// ```
-    fn build_proot_options(rootfs: String, rootfs_args: String, no_extra_binds: bool, no_group: bool) -> String {
+    fn build_proot_options(rootfs: &str, rootfs_args: String, no_extra_binds: bool, no_group: bool) -> String {
         let mut proot_options = format!("-R {rootfs} --bind=/media --bind=/mnt {rootfs_args}");
 
         if no_group {
@@ -148,13 +142,7 @@ impl Command {
     ///
     /// # Returns
     /// A `String` containing the constructed Bubblewrap options.
-    ///
-    /// # Example
-    /// ```
-    /// let opts = build_bwrap_options("/path/to/rootfs".to_string(), "".to_string(), false);
-    /// println!("bwrap options: {}", opts);
-    /// ```
-    fn build_bwrap_options(rootfs: String, rootfs_args: String, ignore_extra_binds: bool, no_group: bool) -> String {
+    fn build_bwrap_options(rootfs: &str, rootfs_args: String, ignore_extra_binds: bool, no_group: bool) -> String {
 
         let mut bwrap_options = format!(
             "--unshare-user \
@@ -188,7 +176,7 @@ impl Command {
             );
         }
 
-        Self::fix_mtab_symlink(Path::new(&rootfs.clone())).unwrap();
+        Self::fix_mtab_symlink(Path::new(rootfs)).unwrap();
 
         if !ignore_extra_binds {
             if Path::new("/etc/asound.conf").exists() {
@@ -233,12 +221,6 @@ impl Command {
     ///
     /// # Returns
     /// * `u32` - The UID of the current user, or `1000` if not found.
-    ///
-    /// # Example
-    /// ```
-    /// let uid = get_uid_from_passwd();
-    /// println!("Current UID: {}", uid);
-    /// ```
     fn get_uid_from_passwd() -> u32 {
         let username = env::var("USER").or_else(|_| env::var("LOGNAME")).unwrap_or_default();
         let passwd = fs::read_to_string("/etc/passwd").unwrap_or_default();
@@ -258,11 +240,6 @@ impl Command {
     ///
     /// # Parameters
     /// - `rootfs`: Path to the root filesystem.
-    ///
-    /// # Example
-    /// ```
-    /// fix_mtab_symlink("/my/rootfs".to_string());
-    /// ```
     pub fn fix_mtab_symlink(rootfs: &Path) -> io::Result<()> {
         use std::os::unix::fs::symlink;
 

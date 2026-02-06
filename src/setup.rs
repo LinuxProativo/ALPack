@@ -1,7 +1,7 @@
 use crate::command::Command;
 use crate::mirror::Mirror;
 use crate::settings::Settings;
-use crate::utils::{_parse_key_value, finish_msg_setup};
+use crate::utils::finish_msg_setup;
 use crate::{parse_key_value, utils};
 
 use flate2::read::GzDecoder;
@@ -11,18 +11,18 @@ use scraper::{Html, Selector};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::{fs, io};
 use tar::Archive;
 
 pub const DEF_PACKAGES: &str =
     "alpine-sdk autoconf automake cmake glib-dev glib-static libtool go xz";
 
-pub struct Setup {
-    name: String,
+pub struct Setup<'a> {
+    name: &'a str,
     remaining_args: Vec<String>,
-    def_rootfs: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -33,12 +33,11 @@ struct VersionKey {
     suffix: String,
 }
 
-impl Setup {
-    pub fn new(name: String, remaining_args: Vec<String>) -> Self {
+impl<'a> Setup<'a> {
+    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
         Setup {
             name,
             remaining_args,
-            def_rootfs: None,
         }
     }
 
@@ -49,7 +48,7 @@ impl Setup {
 
         let sett = Settings::load_or_create();
         let (mut cache_dir, mut rootfs_dir) = (sett.set_cache_dir(), sett.set_rootfs());
-        self.def_rootfs = Some(sett.set_rootfs());
+        let def_rootfs: &str = &rootfs_dir.clone();
 
         while let Some(arg) = args.pop_front() {
             match arg.as_str() {
@@ -90,7 +89,7 @@ impl Setup {
         }
 
         if !reinstall {
-            self.test_valid_directory(&rootfs_dir)?;
+            self.test_valid_directory(&rootfs_dir, &def_rootfs)?;
         }
 
         if no_cache {
@@ -138,7 +137,7 @@ impl Setup {
             dest_rootfs = self.extract_tar_gz(format!("{dest_dir}/{link}"), rootfs_dir)?;
 
             if no_cache {
-                let path = Path::new(cache_dir.as_str());
+                let path = Path::new(&cache_dir);
                 fs::remove_dir_all(path)?;
             }
         } else {
@@ -146,7 +145,7 @@ impl Setup {
         }
 
         let new_content = mirror.get_repository();
-        let repo_path = Path::new(dest_rootfs.as_str()).join("etc/apk/repositories");
+        let repo_path = Path::new(&dest_rootfs).join("etc/apk/repositories");
         let mut file = File::create(&repo_path)?;
         file.write_all(new_content.as_bytes())?;
 
@@ -170,7 +169,7 @@ impl Setup {
             )?;
         }
 
-        finish_msg_setup(self.name.clone());
+        finish_msg_setup(self.name);
         Ok(())
     }
 
@@ -221,12 +220,6 @@ impl Setup {
     /// # Returns
     /// * `Some(VersionKey)` if the string is successfully parsed.
     /// * `None` if the string does not match the expected version pattern.
-    ///
-    /// # Examples
-    /// ```
-    /// let version = parse_version_key("3.23.0_alpha20250612");
-    /// assert!(version.is_some());
-    /// ```
     fn parse_version_key(&self, link_contain_version: &str) -> Option<VersionKey> {
         let re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(?:[_\-]?([a-zA-Z0-9]+))?$").ok()?;
         let caps = re.captures(link_contain_version)?;

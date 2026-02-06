@@ -116,12 +116,8 @@ Examples:
 
 /// alpack is the main logic function of the program, returning a Result for error handling
 fn alpack() -> Result<(), Box<dyn Error>> {
-    let cmd = env::current_exe()
-        .unwrap()
-        .file_name()
-        .unwrap()
-        .display()
-        .to_string();
+    let cmd_path = env::current_exe().unwrap();
+    let cmd = &cmd_path.file_name().unwrap().to_string_lossy();
 
     let mut pargs = Arguments::from_env();
     let command: Option<String> = pargs.opt_free_from_str().unwrap_or_default();
@@ -129,10 +125,7 @@ fn alpack() -> Result<(), Box<dyn Error>> {
     let remaining_args: Vec<String> = pargs
         .finish()
         .into_iter()
-        .map(|s| {
-            s.into_string()
-                .unwrap_or_else(|os| os.to_string_lossy().into())
-        })
+        .map(|s| s.to_string_lossy().into_owned())
         .collect();
 
     match command.as_deref() {
@@ -142,33 +135,33 @@ fn alpack() -> Result<(), Box<dyn Error>> {
             let mut subargs: Vec<String> = Vec::new();
 
             while let Some(arg) = args.next() {
-                if arg == "--rootfs" || arg == "-R" {
-                    rootfs = args.next();
-                } else if arg.starts_with("--rootfs=") {
-                    rootfs = Some(arg.trim_start_matches("--rootfs=").to_string());
-                } else if subcommand.is_none() {
-                    subcommand = Some(arg);
-                } else {
-                    subargs.push(arg);
+                match arg.as_str() {
+                    "-R" | "--rootfs" => rootfs = args.next(),
+                    a if a.starts_with("--rootfs=") => {
+                        rootfs = a.split_once('=').map(|(_, v)| v.to_string());
+                    }
+                    _ if subcommand.is_none() => subcommand = Some(arg),
+                    _ => subargs.push(arg),
                 }
             }
 
             Apk::new(cmd, subcommand, subargs, rootfs).run()
         }
+
         Some("add") | Some("del") | Some("install") | Some("remove") | Some("-s")
         | Some("search") | Some("update") | Some("fix") | Some("-u") => {
             Apk::new(cmd, command, remaining_args, None).run()
         }
+
         Some("aports") => Aports::new(cmd, remaining_args).run(),
         Some("builder") => Builder::new(cmd, remaining_args).run(),
         Some("config") => Config::new(cmd, remaining_args).run(),
         Some("run") => Run::new(cmd, remaining_args).run(),
         Some("setup") => Setup::new(cmd, remaining_args).run(),
+
         Some("-h") | Some("--help") => print_help(&cmd),
-        Some("-V") | Some("--version") => {
-            let version = env!("CARGO_PKG_VERSION");
-            Ok(println!("{cmd} {version}"))
-        }
+        Some("-V") | Some("--version") => Ok(println!("{}", env!("CARGO_PKG_VERSION"))),
+
         Some(other) => Err(format!(
             "{cmd}: invalid argument '{other}'\nUse '{cmd} --help' to see available options."
         )

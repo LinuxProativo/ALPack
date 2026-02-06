@@ -1,7 +1,6 @@
 use crate::command::Command;
 use crate::settings::Settings;
 use crate::setup::DEF_PACKAGES;
-use crate::utils::_parse_key_value;
 use crate::{parse_key_value, utils};
 
 use std::collections::VecDeque;
@@ -11,13 +10,13 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::{env, fs};
 
-pub struct Builder {
-    name: String,
+pub struct Builder<'a> {
+    name: &'a str,
     remaining_args: Vec<String>,
 }
 
-impl Builder {
-    pub fn new(name: String, remaining_args: Vec<String>) -> Self {
+impl<'a> Builder<'a> {
+    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
         Builder {
             name,
             remaining_args,
@@ -39,7 +38,7 @@ impl Builder {
         let mut apkbuild_file = String::new();
 
         let sett = Settings::load_or_create();
-        let mut rootfs_dir: String = sett.set_rootfs();
+        let mut rootfs_dir = sett.set_rootfs();
 
         while let Some(arg) = args.pop_front() {
             match arg.as_str() {
@@ -88,7 +87,7 @@ impl Builder {
                     let dest_file = build_dir.join("APKBUILD");
                     fs::copy(apkbuild_file.clone(), &dest_file)?;
 
-                    Self::run_abuild(rootfs_dir.clone(), dir_name)?;
+                    Self::run_abuild(&rootfs_dir, dir_name)?;
                 } else if file_path.is_dir() {
                     concat_args.push(apkbuild_file);
                 } else {
@@ -169,7 +168,7 @@ impl Builder {
                 utils::copy_dir_recursive(dir_name.as_ref(), build_dir)?;
             }
 
-            Self::run_abuild(rootfs_dir.clone(), folder_name.to_string())?;
+            Self::run_abuild(&rootfs_dir, folder_name.to_string())?;
         }
 
         Ok(())
@@ -217,7 +216,7 @@ impl Builder {
     /// run_abuild("/path/to/rootfs".to_string(), "/path/to/srcdir".to_string())?;
     /// println!("Build completed successfully");
     /// ```
-    fn run_abuild(rootfs: String, dir_name: String) -> Result<(), Box<dyn Error>> {
+    fn run_abuild(rootfs: &str, dir_name: String) -> Result<(), Box<dyn Error>> {
         let cmd = format!(
             "
             type abuild > /dev/null || apk add {a}
@@ -232,7 +231,7 @@ impl Builder {
             a = DEF_PACKAGES
         );
 
-        Command::run(rootfs.clone(), None, Some(cmd), false, false, false)?;
+        Command::run(rootfs, None, Some(cmd), false, false, false)?;
 
         let cmd = format!("
             HOME=/build

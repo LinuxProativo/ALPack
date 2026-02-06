@@ -1,17 +1,16 @@
 use crate::parse_key_value;
 use crate::settings::Settings;
-use crate::utils::_parse_key_value;
 
 use std::collections::VecDeque;
 use std::error::Error;
 
-pub struct Config {
-    name: String,
+pub struct Config<'a> {
+    name: &'a str,
     remaining_args: Vec<String>,
 }
 
-impl Config {
-    pub fn new(name: String, remaining_args: Vec<String>) -> Self {
+impl<'a> Config<'a> {
+    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
         Config {
             name,
             remaining_args,
