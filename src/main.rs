@@ -3,6 +3,7 @@ mod aports;
 mod builder;
 mod command;
 mod config;
+mod macros;
 mod mirror;
 mod run;
 mod settings;
