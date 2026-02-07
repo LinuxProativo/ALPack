@@ -1,6 +1,13 @@
 //! Command-line argument parsing and package matching macros.
+//!
+//! This module provides a set of utility macros for the ALPack CLI to handle
+//! string manipulation, path construction, and argument validation with a
+//! focus on memory efficiency and clear user feedback.
 
 /// Unified macro for generating "invalid argument" errors.
+///
+/// It constructs a formatted error message that includes the command context,
+/// the offending argument, and a helpful tip to use the `--help` flag.
 #[macro_export]
 macro_rules! invalid_arg {
     ($cmd:expr, $sub:expr, $other:expr) => {{
@@ -23,6 +30,10 @@ macro_rules! invalid_arg {
 }
 
 /// Unified error reporter for missing parameters.
+///
+/// Supports two levels of severity:
+/// 1. **Default**: General missing parameter error.
+/// 2. **Essential**: Used when a core parameter required for the operation is absent.
 #[macro_export]
 macro_rules! missing_arg {
     ($cmd:expr, $sub:expr, essential) => {{
@@ -43,6 +54,9 @@ macro_rules! missing_arg {
 }
 
 /// Efficiently joins multiple string segments into a single path.
+///
+/// It trims trailing slashes from the base and leading/trailing slashes
+/// from segments to ensure a clean, single-slash delimited path string.
 #[macro_export]
 macro_rules! concat_path {
     ($base:expr, $($segment:expr),+) => {{
@@ -55,7 +69,10 @@ macro_rules! concat_path {
     }};
 }
 
-/// Collects positional arguments from a queue until it hits the next flag (starts with '-').
+/// Collects positional arguments from a queue until it hits the next flag.
+///
+/// Stops a collection if an argument starts with `-`, pushing it back to
+/// the front of the queue to preserve it for the next parsing step.
 #[macro_export]
 macro_rules! collect_args {
     ($args:expr, $target:expr) => {
@@ -70,6 +87,9 @@ macro_rules! collect_args {
 }
 
 /// Searches for package patterns within a text content and collects matching lines.
+///
+/// PERFORMANCE: Pre-formats the search pattern outside the inner loop to
+/// minimize heap allocations during large database lookups.
 #[macro_export]
 macro_rules! collect_matches {
     ($pkgs:expr, $content:expr, $result:expr) => {
@@ -86,7 +106,14 @@ macro_rules! collect_matches {
 }
 
 /// Parses key-value pairs in both `--key=value` and `--key value` formats.
-/// Returns `Ok(String)` with the value or `Err(String)` with a usage message if missing.
+///
+/// PERFORMANCE: Use `AsRef<str>` to handle both `String` and `&str` inputs
+/// without forced cloning. Only allocates a new `String` when a value is
+/// successfully extracted or an error message is generated.
+///
+/// # Returns
+/// - `Ok(String)`: The extracted value.
+/// - `Err(String)`: A detailed usage message if the value is missing.
 #[macro_export]
 macro_rules! parse_key_value {
     ($sub:expr, $val_name:expr, $arg:expr, $next:expr) => {{
