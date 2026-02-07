@@ -24,7 +24,7 @@ impl<'a> Run<'a> {
 
         let mut cmd_args = Vec::new();
         let mut bind_args: Option<String> = None;
-        let (mut use_root, mut ignore_extra_bind) = (false, false);
+        let (mut use_root, mut ignore_extra_bind, mut no_groups) = (false, false, false);
 
         while let Some(arg) = args.pop_front() {
             match arg.as_str() {
@@ -33,6 +33,9 @@ impl<'a> Run<'a> {
                 },
                 "-i" | "--ignore-extra-binds" => {
                     ignore_extra_bind = true;
+                },
+                "-n" | "--no-groups" => {
+                    no_groups = true;
                 },
                 a if a.starts_with("--bind-args=") => {
                     bind_args = Some(parse_key_value!("run", "parameters", arg)?);
