@@ -1,19 +1,27 @@
-use crate::command::Command;
+//! Alpine Package Ports (aports) management module.
+//!
+//! This module provides the `Aports` struct and logic to interact with the
+//! Alpine Linux aports repository, allowing for database updates,
+//! package searching, and source file retrieval via sparse-checkout.
+
 use crate::settings::Settings;
-use crate::utils;
-use crate::utils::SEPARATOR;
-use crate::{collect_args, collect_matches, parse_key_value};
+use crate::{collect_args, concat_path, git_utils, parse_key_value};
+use crate::{invalid_arg, missing_arg, utils};
 
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;
 
+/// Controller for Alpine Linux repository operations.
 pub struct Aports<'a> {
+    /// The name of the current execution context.
     name: &'a str,
+    /// Arguments passed from the CLI for processing.
     remaining_args: Vec<String>,
 }
 
 impl<'a> Aports<'a> {
+    /// Creates a new `Aports` instance with the given context and arguments.
     pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
         Aports {
             name,
@@ -21,34 +29,45 @@ impl<'a> Aports<'a> {
         }
     }
 
+    /// Executes the aports command logic based on the provided arguments.
+    ///
+    /// The flow includes parsing arguments, optionally updating the local
+    /// repository index, and performing search or fetch operations.
+    ///
+    /// # Performance
+    /// - Uses `VecDeque<&str>` to avoid heap allocations during argument parsing.
+    /// - Implements lazy loading for the database content.
+    ///
+    /// # Returns
+    /// - `Ok(())` on success.
+    /// - `Err` if argument validation, repository setup, or file operations fail.
     pub fn run(&self) -> Result<(), Box<dyn Error>> {
-        let mut args: VecDeque<_> = self.remaining_args.clone().into();
+        let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
+
         if args.is_empty() {
-            return Err(format!(
-                "{c}: aports: no parameter specified\nUse '{c} --help' to see available options.",
-                c = self.name
-            )
-            .into());
+            return missing_arg!(self.name, "aports");
         }
 
         let sett = Settings::load_or_create();
         let mut rootfs_dir = sett.set_rootfs();
         let (mut search_pkg, mut get_pkg) = (Vec::new(), Vec::new());
-        let mut output = (!sett.output_dir.is_empty())
-            .then(|| sett.output_dir)
-            .unwrap_or_else(|| Settings::set_output_dir().unwrap());
+
+        let mut output = if !sett.output_dir.is_empty() {
+            sett.output_dir
+        } else {
+            Settings::set_output_dir()?
+        };
+
         let (mut update, mut search, mut get, mut bk) = (false, false, false, false);
 
         while let Some(arg) = args.pop_front() {
-            match arg.as_str() {
-                "-u" | "--update" => {
-                    (update, bk) = (true, true);
-                }
+            match arg {
+                "-u" | "--update" => (update, bk) = (true, true),
                 a if a.starts_with("--output=") => {
                     output = parse_key_value!("aports", "directory", arg)?;
                 }
                 "-o" | "--output" => {
-                    output = parse_key_value!("aports", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
+                    output = parse_key_value!("aports", "directory", arg, args.pop_front())?;
                 }
                 a if a.starts_with("--search=") => {
                     (search, bk) = (true, true);
@@ -57,7 +76,12 @@ impl<'a> Aports<'a> {
                 }
                 "-s" | "--search" => {
                     (search, bk) = (true, true);
-                    search_pkg.push(parse_key_value!("aports", "package", arg, Some(args.pop_front().unwrap_or_default()))?);
+                    search_pkg.push(parse_key_value!(
+                        "aports",
+                        "package",
+                        arg,
+                        args.pop_front()
+                    )?);
                     collect_args!(args, search_pkg);
                 }
                 a if a.starts_with("--get=") => {
@@ -67,94 +91,54 @@ impl<'a> Aports<'a> {
                 }
                 "-g" | "--get" => {
                     (get, bk) = (true, true);
-                    get_pkg.push(parse_key_value!("aports", "package", arg, Some(args.pop_front().unwrap_or_default()))?);
+                    get_pkg.push(parse_key_value!(
+                        "aports",
+                        "package",
+                        arg,
+                        args.pop_front()
+                    )?);
                     collect_args!(args, get_pkg);
                 }
                 a if a.starts_with("--rootfs=") => {
                     rootfs_dir = parse_key_value!("aports", "directory", arg)?;
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("aports", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
+                    rootfs_dir = parse_key_value!("aports", "directory", arg, args.pop_front())?;
                 }
-                other => {
-                    return Err(format!("{c}: aports: invalid argument '{other}'\nUse '{c} --help' to see available options.", c = self.name).into())
-                }
+                other => return invalid_arg!(self.name, "aports", other),
             }
         }
 
         if !bk {
-            return Err(format!("{c}: aports: no essential parameter specified\nUse '{c} --help' to see available options.", c = self.name).into());
+            return missing_arg!(self.name, "aports", essential);
         }
 
         if update {
-            let cmd = Some("
-                which git > /dev/null || apk add git
-                rm -rf /build
-                mkdir -p /build
-                cd /build
-                git clone --depth=1 --filter=tree:0 --no-checkout https://github.com/alpinelinux/aports.git 2> /dev/null
-                cd ./aports/
-                git fetch --depth=1 --filter=tree:0
-                git ls-tree -r HEAD --name-only | grep -E \"(community|main|testing)\" > ../aports-database
-            ".to_string());
-            Command::run(&rootfs_dir, None, cmd, true, true, false)?;
+            git_utils::setup_repository(
+                &rootfs_dir,
+                "https://github.com/alpinelinux/aports.git",
+                "aports",
+                &["main", "community", "testing"],
+            )?;
 
-            if search_pkg.is_empty() && get_pkg.is_empty() {
+            if !search && !get {
                 return Ok(());
             }
         }
 
         utils::check_rootfs_exists(self.name, &rootfs_dir)?;
-        let path = format!("{}/build/aports-database", rootfs_dir);
-        let content = fs::read_to_string(&path)?;
-        let (mut s_result, mut g_result) = (String::new(), String::new());
-
-        collect_matches!(&search_pkg, content, s_result);
-        collect_matches!(&get_pkg, content, g_result);
+        let content = fs::read_to_string(concat_path!(rootfs_dir, "build", "aports-database"))?;
 
         if search {
-            if s_result.is_empty() {
-                return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
-            }
-            println!(
-                "{u}\n{}\n{s_result}\n{u}",
-                utils::get_cmd_box("SEARCH RESULT:", None, Some(18))?,
-                u = SEPARATOR,
-            );
-            if g_result.is_empty() {
+            git_utils::print_result(&search_pkg, &content)?;
+
+            if !get {
                 return Ok(());
             }
         }
 
         if get {
-            if g_result.is_empty() {
-                return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
-            }
-
-            let apkbuild_dirs: Vec<String> = g_result
-                .lines()
-                .filter(|l| l.contains("APKBUILD"))
-                .filter_map(|l| l.rsplit_once('/').map(|(b, _)| b.to_string()))
-                .collect();
-
-            let cmd = Some(format!(
-                "
-                cd /build/aports
-                git sparse-checkout init --cone
-                git sparse-checkout set {}
-                git checkout
-            ",
-                apkbuild_dirs.join(" ")
-            ));
-
-            Command::run(&rootfs_dir, None, cmd, true, true, false)?;
-
-            apkbuild_dirs.iter().try_for_each(|dir| {
-                utils::copy_dir_recursive(
-                    format!("{rootfs_dir}/build/aports/{dir}").as_ref(),
-                    output.as_ref(),
-                )
-            })?;
+            git_utils::fetch_package_files(&rootfs_dir, "aports", &get_pkg, &content, &output)?;
         }
         Ok(())
     }
