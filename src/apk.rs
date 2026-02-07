@@ -49,7 +49,7 @@ impl<'a> Apk<'a> {
     /// - `Ok(())` on success.
     /// - `Err(Box<dyn Error>)` if execution fails.
     fn run_apk(&self, cmd: &str) -> Result<(), Box<dyn Error>> {
-        let get_rootfs = match self.rootfs.clone().unwrap_or_default().is_empty() {
+        let rootfs = match self.rootfs.clone().unwrap_or_default().is_empty() {
             false => self.rootfs.clone().unwrap(),
             true => {
                 let sett = Settings::load_or_create();
@@ -58,7 +58,7 @@ impl<'a> Apk<'a> {
         };
 
         Command::run(
-            get_rootfs,
+            &rootfs,
             None,
             Some(format!("{cmd} {}", self.remaining_args.join(" "))),
             true,

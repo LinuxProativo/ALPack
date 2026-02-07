@@ -45,36 +45,36 @@ impl<'a> Aports<'a> {
                     (update, bk) = (true, true);
                 }
                 a if a.starts_with("--output=") => {
-                    output = parse_key_value!("aports", "directory", arg)?.unwrap();
+                    output = parse_key_value!("aports", "directory", arg)?;
                 }
                 "-o" | "--output" => {
-                    output = parse_key_value!("aports", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    output = parse_key_value!("aports", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 a if a.starts_with("--search=") => {
                     (search, bk) = (true, true);
-                    search_pkg.push(parse_key_value!("aports", "package", arg)?.unwrap());
+                    search_pkg.push(parse_key_value!("aports", "package", arg)?);
                     collect_args!(args, search_pkg);
                 }
                 "-s" | "--search" => {
                     (search, bk) = (true, true);
-                    search_pkg.push(parse_key_value!("aports", "package", arg, args.pop_front().unwrap_or_default())?.unwrap());
+                    search_pkg.push(parse_key_value!("aports", "package", arg, Some(args.pop_front().unwrap_or_default()))?);
                     collect_args!(args, search_pkg);
                 }
                 a if a.starts_with("--get=") => {
                     (get, bk) = (true, true);
-                    get_pkg.push(parse_key_value!("aports", "package", arg)?.unwrap());
+                    get_pkg.push(parse_key_value!("aports", "package", arg)?);
                     collect_args!(args, get_pkg);
                 }
                 "-g" | "--get" => {
                     (get, bk) = (true, true);
-                    get_pkg.push(parse_key_value!("aports", "package", arg, args.pop_front().unwrap_or_default())?.unwrap());
+                    get_pkg.push(parse_key_value!("aports", "package", arg, Some(args.pop_front().unwrap_or_default()))?);
                     collect_args!(args, get_pkg);
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("aports", "directory", arg)?.unwrap();
+                    rootfs_dir = parse_key_value!("aports", "directory", arg)?;
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("aports", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    rootfs_dir = parse_key_value!("aports", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 other => {
                     return Err(format!("{c}: aports: invalid argument '{other}'\nUse '{c} --help' to see available options.", c = self.name).into())
@@ -104,7 +104,7 @@ impl<'a> Aports<'a> {
             }
         }
 
-        utils::check_rootfs_exists(self.name.clone(), rootfs_dir.clone())?;
+        utils::check_rootfs_exists(self.name, &rootfs_dir)?;
         let path = format!("{}/build/aports-database", rootfs_dir);
         let content = fs::read_to_string(&path)?;
         let (mut s_result, mut g_result) = (String::new(), String::new());
@@ -114,16 +114,12 @@ impl<'a> Aports<'a> {
 
         if search {
             if s_result.is_empty() {
-                return Err(
-                    format!("{u}\nResult not found!\n{u}", u = utils::separator_line()).into(),
-                );
+                return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
             }
             println!(
-                "{}\n{}\n{}\n{}",
-                utils::separator_line(),
-                utils::get_cmd_box("SEARCH RESULT:".to_string(), None, Some(18))?,
-                s_result,
-                utils::separator_line()
+                "{u}\n{}\n{s_result}\n{u}",
+                utils::get_cmd_box("SEARCH RESULT:", None, Some(18))?,
+                u = SEPARATOR,
             );
             if g_result.is_empty() {
                 return Ok(());
@@ -132,9 +128,7 @@ impl<'a> Aports<'a> {
 
         if get {
             if g_result.is_empty() {
-                return Err(
-                    format!("{u}\nResult not found!\n{u}", u = utils::separator_line()).into(),
-                );
+                return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
             }
 
             let apkbuild_dirs: Vec<String> = g_result
@@ -153,7 +147,7 @@ impl<'a> Aports<'a> {
                 apkbuild_dirs.join(" ")
             ));
 
-            Command::run(rootfs_dir.clone(), None, cmd, true, true, false)?;
+            Command::run(&rootfs_dir, None, cmd, true, true, false)?;
 
             apkbuild_dirs.iter().try_for_each(|dir| {
                 utils::copy_dir_recursive(

@@ -36,28 +36,28 @@ impl<'a> Config<'a> {
                     sett.release = "edge".to_string();
                 },
                 a if a.starts_with("--cache-dir=") => {
-                    sett.cache_dir = parse_key_value!("config", "directory", arg)?.unwrap();
+                    sett.cache_dir = parse_key_value!("config", "directory", arg)?;
                 }
                 "--cache-dir" => {
-                    sett.cache_dir = parse_key_value!("config", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    sett.cache_dir = parse_key_value!("config", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 },
                 a if a.starts_with("--rootfs-dir=") => {
-                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?.unwrap();
+                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?;
                 }
                 "--rootfs-dir" => {
-                    sett.rootfs_dir = parse_key_value!("config", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    sett.rootfs_dir = parse_key_value!("config", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 },
                 a if a.starts_with("--output-dir=") => {
-                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?.unwrap();
+                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?;
                 }
                 "--output-dir" => {
-                    sett.rootfs_dir = parse_key_value!("config", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    sett.rootfs_dir = parse_key_value!("config", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 },
                 a if a.starts_with("--default-mirror=") => {
-                    sett.default_mirror = parse_key_value!("config", "mirror", arg)?.unwrap();
+                    sett.default_mirror = parse_key_value!("config", "mirror", arg)?;
                 }
                 "--default-mirror" => {
-                    sett.default_mirror = parse_key_value!("config", "mirror", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    sett.default_mirror = parse_key_value!("config", "mirror", arg, Some(args.pop_front().unwrap_or_default()))?;
                 },
                 _ => {
                     return Err(format!("{c}: aports: invalid argument '{arg}'\nUse '{c} --help' to see available options.", c = self.name).into())

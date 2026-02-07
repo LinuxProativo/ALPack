@@ -35,24 +35,22 @@ impl<'a> Run<'a> {
                     ignore_extra_bind = true;
                 },
                 a if a.starts_with("--bind-args=") => {
-                    bind_args = parse_key_value!("run", "parameters", arg)?;
+                    bind_args = Some(parse_key_value!("run", "parameters", arg)?);
                 }
                 "-b" | "--bind-args" => {
-                    bind_args = parse_key_value!("run", "parameters", arg, args.pop_front().unwrap_or_default())?;
+                    bind_args = Some(parse_key_value!("run", "parameters", arg, Some(args.pop_front().unwrap_or_default()))?);
                 },
                 a if a.starts_with("--command=") => {
-                    let cmd = parse_key_value!("run", "command", arg)?;
-                    cmd_args.push(cmd.unwrap());
+                    cmd_args.push(parse_key_value!("run", "command", arg)?);
                 }
                 "-c" | "--command" => {
-                    let cmd = parse_key_value!("run", "command", arg, args.pop_front().unwrap_or_default())?;
-                    cmd_args.push(cmd.unwrap());
+                    cmd_args.push(parse_key_value!("run", "command", arg, Some(args.pop_front().unwrap_or_default()))?);
                 },
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("run", "directory", arg)?.unwrap();
+                    rootfs_dir = parse_key_value!("run", "directory", arg)?;
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("run", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    rootfs_dir = parse_key_value!("run", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 "--" => {
                     cmd_args.extend(args.drain(..));

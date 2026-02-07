@@ -2,7 +2,6 @@ use crate::settings::Settings;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::error::Error;
 use std::fs::File;
-use std::ops::Add;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
@@ -10,95 +9,28 @@ use walkdir_minimal::WalkDir;
 use which::which;
 
 pub const DOWNLOAD_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})";
-
-#[macro_export]
-macro_rules! parse_key_value {
-    ($sub:expr, $val:expr, $arg:expr) => {
-        _parse_key_value($sub, $val, $arg, None)
-    };
-    ($sub:expr, $val:expr, $arg:expr, $next:expr) => {
-        _parse_key_value($sub, $val, $arg, Some($next))
-    };
-}
-
-/// Parses a `--key=value` or `--key value` style argument.
-///
-/// # Parameters
-/// - `sub`: The subcommand name (used in error messages).
-/// - `val`: A human-readable name of the expected value (used in error messages).
-/// - `key`: The key to match (e.g., "cache", "mirror").
-/// - `arg`: The current argument to check (maybe `--key=value` or just `--key`).
-/// - `next_args`: The next argument, if available (used if `arg` is just `--key`).
-///
-/// # Returns
-/// - `Ok(Some(value))` if a value is successfully parsed.
-/// - `Err` if the argument is missing a required value.
-///
-/// # Example
-/// ```
-/// let val = _parse_key_value("install", "PATH", "cache", "--cache=/tmp".to_string(), None)?;
-/// assert_eq!(val, Some("/tmp".to_string()));
-/// ```
-pub fn _parse_key_value(
-    sub: &str,
-    val: &str,
-    arg: String,
-    next_args: Option<String>,
-) -> Result<Option<String>, Box<dyn Error>> {
-    let prefix = arg.clone().split("=").collect::<Vec<&str>>()[0]
-        .to_string()
-        .add("=");
-    let cmd = env::current_exe()
-        .unwrap()
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
-    let mut value = arg.strip_prefix(&prefix).unwrap_or_default().to_string();
-    let mut sp = "".to_string();
-
-    if next_args.is_some() {
-        value = next_args.unwrap_or_default();
-        sp = " ".to_string();
-    }
-
-    if value.is_empty() {
-        return Err(format!("{cmd}: {sub}: {arg} requires a <{val}> as argument.\nUsage: {cmd} {sub} {arg}{sp}<{val}>").into());
-    }
-    Ok(Some(value.to_string()))
-}
+pub const SEPARATOR: &str = "════════════════════════════════════════════════════════════";
 
 /// Determines the architecture string to use.
 ///
 /// # Returns
 /// * `String` - A string representing the architecture (e.g., "x86_64", "aarch64").
-///
-/// # Example
-/// ```
-/// let arch = get_arch();
-/// println!("Detected architecture: {}", arch);
-/// ```
 pub fn get_arch() -> String {
     env::var("ALPACK_ARCH")
-        .unwrap_or_else(|_| env::var("ARCH").unwrap_or_else(|_| env::consts::ARCH.to_string()))
+        .or_else(|_| env::var("ARCH"))
+        .unwrap_or_else(|_| env::consts::ARCH.to_string())
 }
 
 /// Displays a final setup message with styled formatting.
 ///
 /// # Arguments
 /// * `cmd` - The base command to be used in the suggestion (e.g., "ALPack").
-///
-/// # Example
-/// ```
-/// finish_msg_setup("ALPack".to_string());
-/// ```
-pub fn finish_msg_setup(cmd: String) {
+pub fn finish_msg_setup(cmd: &str) {
+    let b = get_cmd_box(&format!("$ {} run", cmd), Some(2), None).unwrap_or_default();
+
     println!(
-        "{s}\n  Installation completed successfully!\n
-  To start the environment, run:\n{b}\n{s}",
-        b = get_cmd_box(format!("$ {} run", cmd), Some(2), None).unwrap(),
-        s = separator_line()
+        "{s}\n  Installation completed successfully!\n\n  To start the environment, run:\n\n{b}\n{s}",
+        s = SEPARATOR,
     );
 }
 
@@ -110,23 +42,15 @@ pub fn finish_msg_setup(cmd: String) {
 /// # Returns
 /// * `Ok(())` if the directory exists.
 /// * `Err` with a descriptive message if the directory does not exist.
-///
-/// # Example
-/// ```
-/// check_rootfs_exists("/path/to/rootfs")?;
-/// ```
-pub fn check_rootfs_exists(cmd: String, path: String) -> Result<(), Box<dyn Error>> {
-    let dir = Path::new(path.as_str());
-    if !dir.is_dir() {
+pub fn check_rootfs_exists(cmd: &str, path: &str) -> Result<(), Box<dyn Error>> {
+    if !Path::new(path).is_dir() {
+        let b = get_cmd_box(&format!("$ {} setup", cmd), Some(2), None)?;
+
         return Err(format!(
-            "{s}\n  Error: rootfs directory not found.\n
-  Expected location:
-    -> {path}\n
-  Please run the following command to set it up:\n{b}\n{s}",
-            b = get_cmd_box(format!("$ {} setup", cmd), Some(2), None)?,
-            s = separator_line()
-        )
-        .into());
+            "{s}\n  Error: rootfs directory not found.\n\n  Expected location:\n    -> {p}\n\n  Please run the following command to set it up:\n{b}\n{s}",
+            s = SEPARATOR,
+            p = path,
+        ).into());
     }
     Ok(())
 }
@@ -138,50 +62,25 @@ pub fn check_rootfs_exists(cmd: String, path: String) -> Result<(), Box<dyn Erro
 ///
 /// # Returns
 /// A `String` that represents a multi-line box with the command inside.
-///
-/// # Example
-/// ```
-/// let box_str = get_cmd_box("$ ALPack setup");
-/// println!("{}", box_str);
-/// ```
 pub fn get_cmd_box(
-    name: String,
-    repeat: Option<usize>,
+    command: &str,
+    indent: Option<usize>,
     size: Option<usize>,
 ) -> Result<String, Box<dyn Error>> {
-    let command = name;
-    let width: usize = size.unwrap_or_else(|| 50);
-    let rep: usize = repeat.unwrap_or_else(|| 0);
+    let rep = indent.unwrap_or(0);
+    let padding = " ".repeat(rep);
 
-    let top = "╔".to_string() + &"═".repeat(width - 2) + "╗";
-    let bottom = "╚".to_string() + &"═".repeat(width - 2) + "╝";
+    let width = size.unwrap_or(50).max(command.len() + 4);
+    let inner_width = width - 2;
 
-    let mut middle = String::from("║ ");
-    middle += command.as_str();
-    middle += &" ".repeat(width - 3 - command.len());
-    middle += "║";
+    let line = "═".repeat(inner_width);
+    let top = format!("{}╔{}╗", padding, line);
+    let bottom = format!("{}╚{}╝", padding, line);
 
-    if rep == 0 {
-        return Ok(format!("{top}\n{middle}\n{bottom}"));
-    }
+    let trailing_spaces = " ".repeat(inner_width - command.len() - 1);
+    let middle = format!("{}║ {}{}║", padding, command, trailing_spaces);
 
-    Ok(format!(
-        "{r}{top}\n{r}{middle}\n{r}{bottom}",
-        r = " ".repeat(rep)
-    ))
-}
-
-/// Generates a line composed of a repeated character.
-///
-/// # Returns
-/// A `String` containing the repeated character line.
-///
-/// # Example
-/// ```
-/// println!("{s}", s = separator_line());
-/// ```
-pub fn separator_line() -> String {
-    "═".repeat(60)
+    Ok(format!("{}\n{}\n{}", top, middle, bottom))
 }
 
 /// Recursively copies a directory and all its contents to a specified destination.
@@ -192,13 +91,6 @@ pub fn separator_line() -> String {
 ///
 /// # Returns
 /// * `io::Result<()>` - Ok on success, or an error if the operation fails.
-///
-/// # Example
-/// ```
-/// let src = std::path::Path::new("/home/user/test1");
-/// let dst = std::path::Path::new("/home/user/output");
-/// copy_dir_recursive(src, dst).expect("Failed to copy directory");
-/// ```
 pub fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     println!("copy {} to {}", src.display(), dst.display());
     let dir_name = src
@@ -231,17 +123,11 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 /// # Returns
 /// - `Ok(PathBuf)` with the successfully created directory path (either the target or fallback).
 /// - `Err(io::Error)` if both the target and fallback directory creations fail.
-///
-/// # Examples
-/// ```
-/// let dir = create_dir_with_fallback("/opt/some_dir".to_string())?;
-/// println!("Directory created or reused: {}", dir.display());
-/// ```
-pub fn create_dir_with_fallback(target: String) -> io::Result<PathBuf> {
-    let target_path = Path::new(target.as_str());
+pub fn create_dir_with_fallback(target: &str) -> io::Result<String> {
+    let target_path = Path::new(target);
 
     match fs::create_dir_all(target_path) {
-        Ok(_) => return Ok(target_path.to_path_buf()),
+        Ok(_) => return Ok(target.to_string()),
         Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
             eprintln!(
                 "\x1b[1;33mWarning\x1b[0m: Permission denied to create '{}', using default directory instead...",
@@ -254,7 +140,7 @@ pub fn create_dir_with_fallback(target: String) -> io::Result<PathBuf> {
     let home = Settings::load_or_create().set_rootfs();
     let fallback_path = Path::new(&home);
     fs::create_dir_all(&fallback_path)?;
-    Ok(PathBuf::from(fallback_path))
+    Ok(fallback_path.display().to_string())
 }
 
 /// Downloads a file from the specified URL and saves it to the destination folder.
@@ -267,16 +153,8 @@ pub fn create_dir_with_fallback(target: String) -> io::Result<PathBuf> {
 /// # Returns
 /// * `Ok(String)` - The full path of the saved file.
 /// * `Err`: An `io::Error` if the download or save fails.
-///
-/// # Examples
-/// ```
-/// let saved_path = download_file("https://url.com/file.tar.gz".to_string(),
-///     "/tmp".to_string(), "file.tar.gz".to_string())?;
-/// println!("File saved to: {}", saved_path);
-/// ```
-pub fn download_file(url: String, dest: String, filename: String) -> io::Result<String> {
-    let dest_ok = create_dir_with_fallback(dest);
-    let save_dest = dest_ok?.to_str().unwrap().to_string();
+pub fn download_file(url: &str, dest: &str, filename: &str) -> io::Result<String> {
+    let save_dest = create_dir_with_fallback(dest)?;
     let save_file = format!("{save_dest}/{filename}");
 
     if Path::new(&save_file).exists() {
@@ -313,16 +191,6 @@ pub fn download_file(url: String, dest: String, filename: String) -> io::Result<
     Ok(save_dest)
 }
 
-/// Returns the path to the user's local binary directory (`~/.local/bin`).
-///
-/// # Returns
-/// * `PathBuf` - The full path to `~/.local/bin`. If the `HOME` environment
-///   variable is not set, it falls back to the current directory (`.`).
-fn local_bin_dir() -> PathBuf {
-    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".local").join("bin")
-}
-
 /// Sets executable permissions on a file (Unix-only).
 ///
 /// # Arguments
@@ -330,8 +198,7 @@ fn local_bin_dir() -> PathBuf {
 ///
 /// # Returns
 /// * `Ok(())` if permissions were successfully updated.
-/// * `Err(io::Error)` if the file metadata cannot be read or permissions
-///   cannot be set.
+/// * `Err(io::Error)` if the file metadata cannot be read or permissions cannot be set.
 fn make_executable(path: &Path) -> io::Result<()> {
     let mut perms = fs::metadata(path)?.permissions();
     perms.set_mode(0o755);
@@ -355,17 +222,7 @@ fn binary_url(cmd: &str) -> Option<&'static str> {
     }
 }
 
-/// Checks whether the current system architecture is x86_64.
-///
-/// # Returns
-/// * `true` if the architecture is `x86_64`.
-/// * `false` otherwise.
-fn is_x86_64() -> bool {
-    env::consts::ARCH == "x86_64"
-}
-
 /// Verifies the availability of the specified rootfs command and downloads it if necessary.
-///
 /// Only x86_64 architecture is supported for automatic downloads. On other
 /// architectures, the command must already be available in the system.
 ///
@@ -374,28 +231,22 @@ fn is_x86_64() -> bool {
 ///
 /// # Returns
 /// * `Ok(PathBuf)` - The full path to the resolved executable.
-/// * `Err(io::Error)` if:
-///   - The command is unsupported,
-///   - The architecture is not supported,
-///   - The download fails,
-///   - Or file permissions cannot be set.
-///
-/// # Errors
-/// Returns `io::ErrorKind::Unsupported` if the command is not found and
-/// no binary is available for the current architecture.
+/// * `Err(io::Error)` if the command is unsupported, the architecture is not supported,
+///   the download fails or file permissions cannot be set.
 pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<PathBuf> {
     if let Some(path) = which(cmd_rootfs).ok() {
         return Ok(path);
     }
 
-    let local_dir = local_bin_dir();
+    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
+    let local_dir = PathBuf::from(home).join(".local").join("bin");
     let local_path = local_dir.join(cmd_rootfs);
 
     if local_path.exists() {
         return Ok(local_path);
     }
 
-    if !is_x86_64() {
+    if env::consts::ARCH != "x86_64" {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             format!(
@@ -410,14 +261,8 @@ pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<PathBu
 
     fs::create_dir_all(&local_dir)?;
 
-    let downloaded = download_file(
-        url.to_string(),
-        local_dir.to_string_lossy().to_string(),
-        cmd_rootfs.to_string(),
-    )?;
-
+    let downloaded = download_file(url, local_dir.to_str().unwrap(), cmd_rootfs)?;
     let downloaded_path = PathBuf::from(downloaded);
-
     make_executable(&downloaded_path)?;
 
     Ok(downloaded_path)

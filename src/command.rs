@@ -14,8 +14,9 @@ impl Command {
         use_root: bool, ignore_extra_bind: bool, no_group: bool,
     ) -> Result<i32, Box<dyn std::error::Error>> {
         let sett = Settings::load_or_create();
-        let name = env::current_exe()?.file_name().unwrap().to_str().unwrap().to_string();
-        utils::check_rootfs_exists(name, rootfs.clone())?;
+        let cmd_path = env::current_exe().unwrap();
+        let name = &cmd_path.file_name().unwrap().to_string_lossy();
+        utils::check_rootfs_exists(name, rootfs)?;
 
         let comm = sett.cmd_rootfs;
         let rootfs_cmd = utils::verify_and_download_rootfs_command(&comm)?;

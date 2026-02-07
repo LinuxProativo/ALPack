@@ -43,28 +43,16 @@ impl<'a> Builder<'a> {
         while let Some(arg) = args.pop_front() {
             match arg.as_str() {
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("builder", "directory", arg)?.unwrap();
+                    rootfs_dir = parse_key_value!("builder", "directory", arg)?;
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!(
-                        "builder",
-                        "directory",
-                        arg,
-                        args.pop_front().unwrap_or_default()
-                    )?
-                    .unwrap();
+                    rootfs_dir = parse_key_value!("builder", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 a if a.starts_with("--apkbuild=") => {
-                    apkbuild_file = parse_key_value!("builder", "apkbuild", arg)?.unwrap();
+                    apkbuild_file = parse_key_value!("builder", "apkbuild", arg)?;
                 }
                 "-a" | "--apkbuild" => {
-                    apkbuild_file = parse_key_value!(
-                        "builder",
-                        "apkbuild",
-                        arg,
-                        args.pop_front().unwrap_or_default()
-                    )?
-                    .unwrap();
+                    apkbuild_file = parse_key_value!("builder", "apkbuild", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 _ => {
                     cmd_args.push(arg);

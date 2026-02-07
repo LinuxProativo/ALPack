@@ -65,22 +65,22 @@ impl<'a> Setup<'a> {
                     minimal = true;
                 },
                 a if a.starts_with("--mirror=") => {
-                    use_mirror = parse_key_value!("setup", "url", arg)?;
+                    use_mirror = Some(parse_key_value!("setup", "url", arg)?);
                 }
                 "--mirror" => {
-                    use_mirror = parse_key_value!("setup", "url", arg, args.pop_front().unwrap_or_default())?;
+                    use_mirror = Some(parse_key_value!("setup", "url", arg, Some(args.pop_front().unwrap_or_default()))?);
                 }
                 a if a.starts_with("--cache=") => {
-                    cache_dir = parse_key_value!("setup", "directory", arg)?.unwrap_or_default();
+                    cache_dir = parse_key_value!("setup", "directory", arg)?;
                 }
                 "--cache" => {
-                    cache_dir = parse_key_value!("setup", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    cache_dir = parse_key_value!("setup", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("setup", "directory", arg)?.unwrap_or_default();
+                    rootfs_dir = parse_key_value!("setup", "directory", arg)?;
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("setup", "directory", arg, args.pop_front().unwrap_or_default())?.unwrap();
+                    rootfs_dir = parse_key_value!("setup", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
                 }
                 _ => {
                     return Err(format!("{c}: setup: invalid argument '{arg}'\nUse '{c} --help' to see available options.", c = self.name).into())
@@ -133,8 +133,8 @@ impl<'a> Setup<'a> {
             println!("Latest version found: {version}");
             println!("Link: {url}{link}");
             let dest_dir =
-                utils::download_file(format!("{url}{link}"), cache_dir.clone(), link.to_string())?;
-            dest_rootfs = self.extract_tar_gz(format!("{dest_dir}/{link}"), rootfs_dir)?;
+                utils::download_file(&format!("{url}{link}"), &cache_dir, link)?;
+            dest_rootfs = self.extract_tar_gz(&format!("{dest_dir}/{link}"), &rootfs_dir)?;
 
             if no_cache {
                 let path = Path::new(&cache_dir);
@@ -182,21 +182,13 @@ impl<'a> Setup<'a> {
     /// # Returns
     /// * `Ok(String)` containing the destination path on success.
     /// * `Err`: An `io::Error` if extraction fails.
-    ///
-    /// # Examples
-    /// ```
-    /// let result = extract_tar_gz(String::from("archive.tar.gz"), String::from("/tmp/output"));
-    /// assert!(result.is_ok());
-    /// ```
-    fn extract_tar_gz(&self, file_path: String, destination: String) -> io::Result<String> {
-        let dest_ok = utils::create_dir_with_fallback(destination);
-        let save_dest = dest_ok?.to_str().unwrap().to_string();
-        let mut decoder = GzDecoder::new(File::open(file_path)?);
+    fn extract_tar_gz(&self, file_path: &str, destination: &str) -> io::Result<String> {
+        let save_dest = utils::create_dir_with_fallback(destination)?;
 
-        let mut temp = Vec::new();
-        decoder.read_to_end(&mut temp)?;
+        let file = File::open(file_path)?;
+        let total_size = file.metadata()?.len();
 
-        let bar = ProgressBar::new(temp.len() as u64);
+        let bar = ProgressBar::new(total_size);
         bar.set_message("Extracting...");
         bar.set_style(
             ProgressStyle::with_template(utils::DOWNLOAD_TEMPLATE)
@@ -204,9 +196,11 @@ impl<'a> Setup<'a> {
                 .progress_chars("##-"),
         );
 
-        let reader = bar.wrap_read(io::Cursor::new(temp));
-        let mut archive = Archive::new(reader);
-        archive.unpack(Path::new(save_dest.as_str()))?;
+        let reader = bar.wrap_read(file);
+        let decoder = GzDecoder::new(reader);
+        let mut archive = Archive::new(decoder);
+
+        archive.unpack(&save_dest)?;
 
         bar.finish_with_message("Extracted! ");
         Ok(save_dest)
@@ -221,13 +215,18 @@ impl<'a> Setup<'a> {
     /// * `Some(VersionKey)` if the string is successfully parsed.
     /// * `None` if the string does not match the expected version pattern.
     fn parse_version_key(&self, link_contain_version: &str) -> Option<VersionKey> {
-        let re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(?:[_\-]?([a-zA-Z0-9]+))?$").ok()?;
+        static RE: OnceLock<Regex> = OnceLock::new();
+        let re = RE.get_or_init(|| {
+            Regex::new(r"^(\d+)\.(\d+)\.(\d+)(?:[_\-]?([a-zA-Z0-9]+))?$").unwrap()
+        });
+
         let caps = re.captures(link_contain_version)?;
+
         Some(VersionKey {
             major: caps[1].parse().ok()?,
             minor: caps[2].parse().ok()?,
             patch: caps[3].parse().ok()?,
-            suffix: caps.get(4).map_or("", |m| m.as_str()).to_string(),
+            suffix: caps.get(4).map(|m| m.as_str().to_string()).unwrap_or_default(),
         })
     }
 
@@ -239,42 +238,44 @@ impl<'a> Setup<'a> {
     /// # Returns
     /// - `Ok(())` if the directory exists.
     /// - `Err` with an error message if the directory does not exist or is not accessible.
-    ///
-    /// # Examples
-    /// ```
-    /// let result = test_valid_directory("/path/to/check");
-    /// assert!(result.is_ok());
-    /// ```
-    fn test_valid_directory(&self, target: &str) -> Result<(), Box<dyn Error>> {
+    fn test_valid_directory(&self, target: &str, def_rootfs: &str) -> Result<(), Box<dyn Error>> {
         let target_path = Path::new(target);
 
-        if target_path.exists() && target_path.is_dir() {
-            return Err(format!("Rootfs directory {target} is already available.\nUse [-r|--reinstall] to reinstall it.").into());
+        if target_path.is_dir() {
+            return Err(format!(
+                "Rootfs directory {} is already available.\nUse [-r|--reinstall] to reinstall it.",
+                target
+            ).into());
         }
 
+        let mut can_write = false;
         if let Some(parent) = target_path.parent() {
-            if parent.exists() && fs::metadata(parent).unwrap().permissions().readonly() == false {
+            if parent.exists() {
                 let test_path = parent.join(".permission_test");
-                match File::create(&test_path) {
-                    Ok(_) => {
-                        fs::remove_file(&test_path)?;
-                        return Ok(());
-                    }
-                    Err(_) => {
-                        eprintln!(
-                            "\x1b[1;33mWarning\x1b[0m: Write access denied for '{}'. Falling back to the default location...",
-                            target
-                        );
-                    }
+                if File::create(&test_path).is_ok() {
+                    let _ = fs::remove_file(&test_path);
+                    can_write = true;
                 }
             }
         }
 
-        let home = self.def_rootfs.clone().unwrap();
-        let fallback_path = Path::new(&home);
-        if fallback_path.exists() && fallback_path.is_dir() {
-            return Err(format!("Rootfs directory {target} is already available.\nUse [-r|--reinstall] to reinstall it.").into());
+        if !can_write {
+            if !target.is_empty() {
+                eprintln!(
+                    "\x1b[1;33mWarning\x1b[0m: Write access denied for '{}'. Falling back to the default location...",
+                    target
+                );
+            }
+
+            if let Some(home) = Some(def_rootfs) {
+                if Path::new(home).is_dir() {
+                    return Err(format!(
+                        "Rootfs directory {home} is already available.\nUse [-r|--reinstall] to reinstall it.",
+                    ).into());
+                }
+            }
         }
+
         Ok(())
     }
 }
