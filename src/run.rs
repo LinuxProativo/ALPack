@@ -71,12 +71,12 @@ impl<'a> Run<'a> {
         }
 
         Command::run(
-            rootfs_dir,
+            &rootfs_dir,
             bind_args,
             Some(cmd_args.join(" ")),
             use_root,
             ignore_extra_bind,
-            false,
+            no_groups,
         )?;
         Ok(())
     }
