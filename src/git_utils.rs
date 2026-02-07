@@ -5,8 +5,8 @@
 //! feature, optimized for minimal disk I/O and network usage.
 
 use crate::command::Command;
-use crate::utils::SEPARATOR;
-use crate::{concat_path, utils};
+use crate::utils::{get_cmd_box, SEPARATOR};
+use crate::{collect_matches, concat_path, utils};
 
 use std::error::Error;
 
@@ -59,10 +59,11 @@ pub fn setup_repository(
 /// and copies the resulting files to the final output destination.
 ///
 /// # Parameters
-/// - `rootfs`: Path to the root filesystem where the repo is located.
+/// - `rootfs`: Path to the root filesystem host directory.
 /// - `repo_name`: The subdirectory name within `/build/` (e.g., "aports").
-/// - `matches`: The raw match strings containing APKBUILD paths.
-/// - `output`: The destination directory for the copied package files.
+/// - `pkgs`: A slice of strings containing the package names to be retrieved.
+/// - `content`: The raw string content of the database file.
+/// - `output`: The destination directory for the retrieved files.
 ///
 /// # Returns
 /// - `Ok(())` if all package files were retrieved and copied.
@@ -70,14 +71,19 @@ pub fn setup_repository(
 pub fn fetch_package_files(
     rootfs: &str,
     repo_name: &str,
-    matches: &str,
+    pkgs: &[String],
+    content: &str,
     output: &str,
 ) -> Result<(), Box<dyn Error>> {
-    if matches.is_empty() {
+    let mut g_result = String::new();
+
+    collect_matches!(pkgs, content, g_result);
+
+    if g_result.is_empty() {
         return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
     }
 
-    let pkg_dirs: Vec<&str> = matches
+    let pkg_dirs: Vec<&str> = g_result
         .lines()
         .filter(|l| l.contains("APKBUILD"))
         .filter_map(|l| l.rsplit_once('/').map(|(path, _)| path))
@@ -103,6 +109,38 @@ pub fn fetch_package_files(
             output.as_ref(),
         )?;
     }
+
+    Ok(())
+}
+
+/// Matches packages against the database content and prints a standardized result box.
+///
+/// This function internalizes the search logic by invoking the `collect_matches!` macro.
+/// It aggregates results from the provided database content based on the given package keys.
+/// If matches are found, they are displayed within a formatted UI box; otherwise, it
+/// returns a "Result not found" error.
+///
+/// # Parameters
+/// - `pkgs`: A slice of strings containing the package names or patterns to search for.
+/// - `content`: The raw string content of the database file to be scanned.
+///
+/// # Returns
+/// - `Ok(())` if matches were found and successfully printed to stdout.
+/// - `Err` if the search result is empty or if the UI box generation fails.
+pub fn print_result(pkgs: &[String], content: &str) -> Result<(), Box<dyn Error>> {
+    let mut result = String::new();
+
+    collect_matches!(pkgs, content, result);
+
+    if result.is_empty() {
+        return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
+    }
+
+    println!(
+        "{u}\n{}\n{result}\n{u}",
+        get_cmd_box("SEARCH RESULT:", None, Some(18))?,
+        u = SEPARATOR
+    );
 
     Ok(())
 }
