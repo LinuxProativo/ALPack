@@ -1,16 +1,29 @@
-use crate::command::Command;
-use crate::settings::Settings;
-use std::error::Error;
-use crate::missing_arg;
+//! Alpine Package Manager (apk) wrapper module.
+//!
+//! This module provides a bridge between ALPack commands and the native
+//! Alpine `apk` manager. It handles command aliasing (e.g., 'install' to 'add')
+//! and ensures commands are executed within the correct rootfs context.
 
+use crate::command::Command;
+use crate::missing_arg;
+use crate::settings::Settings;
+
+use std::error::Error;
+
+/// Controller for interacting with the Alpine Package Manager.
 pub struct Apk<'a> {
+    /// The name of the current execution context.
     name: &'a str,
+    /// The specific apk subcommand to run.
     command: Option<String>,
+    /// Additional arguments passed to the apk command.
     remaining_args: Vec<String>,
+    /// Optional rootfs directory override.
     rootfs: Option<String>,
 }
 
 impl<'a> Apk<'a> {
+    /// Creates a new `Apk` instance with provided execution details.
     pub fn new(
         name: &'a str,
         command: Option<String>,
@@ -30,6 +43,10 @@ impl<'a> Apk<'a> {
     /// This method maps ALPack's internal commands and aliases to their
     /// corresponding `apk` operations. It ensures that any command passed
     /// is properly routed or returns a helpful error if none is specified.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the command is successfully dispatched.
+    /// - `Err` if no command is provided or if execution fails.
     pub fn run(&self) -> Result<(), Box<dyn Error>> {
         match &self.command.as_deref() {
             Some("add") | Some("install") => self.run_apk("apk add"),
@@ -62,14 +79,7 @@ impl<'a> Apk<'a> {
             format!("{} {}", cmd, self.remaining_args.join(" "))
         };
 
-        Command::run(
-            &rootfs,
-            None,
-            Some(full_cmd),
-            true,
-            true,
-            false,
-        )?;
+        Command::run(&rootfs, None, Some(full_cmd), true, true, false)?;
         Ok(())
     }
 }
