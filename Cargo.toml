@@ -1,11 +1,11 @@
 [package]
 name = "ALPack"
-version = "3.1.1"
+version = "4.0.0"
 edition = "2024"
 
 [dependencies]
 pico-args = { version = "0.5" }
-ureq = { version = "3.1", features = ["charset"] }
+ureq = { version = "3.2", features = ["charset"] }
 scraper = { version = "0.25" }
 regex = { version = "1.12" }
 indicatif = { version = "0.18" }
