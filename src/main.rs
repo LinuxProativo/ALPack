@@ -1,8 +1,10 @@
 mod apk;
 mod aports;
+mod aptree;
 mod builder;
 mod command;
 mod config;
+mod git_utils;
 mod macros;
 mod mirror;
 mod run;
@@ -12,10 +14,12 @@ mod utils;
 
 use crate::apk::Apk;
 use crate::aports::Aports;
+use crate::aptree::Aptree;
 use crate::builder::Builder;
 use crate::config::Config;
 use crate::run::Run;
 use crate::setup::Setup;
+
 use pico_args::Arguments;
 use std::env;
 use std::error::Error;
@@ -118,25 +122,33 @@ Environment variables:
 Examples:
     {cmd} setup --rootfs=/mnt/alpine --minimal --edge
     {cmd} apk --rootfs=/mnt/alpine install curl
-    {cmd} run -R /mnt/alpine -0 -- fdisk -l
-"
+    {cmd} run -R /mnt/alpine -0 -- fdisk -l"
     );
     Ok(())
 }
 
 /// alpack is the main logic function of the program, returning a Result for error handling
 fn alpack() -> Result<(), Box<dyn Error>> {
-    let cmd_path = env::current_exe().unwrap();
-    let cmd = &cmd_path.file_name().unwrap().to_string_lossy();
+    let cmd_str = env::args().next();
+    let cmd = cmd_str
+        .as_deref()
+        .and_then(|s| s.rsplit('/').next())
+        .unwrap_or("ALPack");
 
     let mut pargs = Arguments::from_env();
-    let command: Option<String> = pargs.opt_free_from_str().unwrap_or_default();
+    let command: Option<String> = pargs.opt_free_from_str().ok().flatten();
 
-    let remaining_args: Vec<String> = pargs
-        .finish()
-        .into_iter()
-        .map(|s| s.to_string_lossy().into_owned())
-        .collect();
+    let remaining_args: Vec<String> = match command.as_deref() {
+        Some("-h") | Some("--help") | Some("-V") | Some("--version") => Vec::new(),
+        _ => pargs
+            .finish()
+            .into_iter()
+            .map(|s| {
+                s.into_string()
+                    .unwrap_or_else(|os| os.to_string_lossy().into_owned())
+            })
+            .collect(),
+    };
 
     match command.as_deref() {
         Some("apk") => {
@@ -164,6 +176,7 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         }
 
         Some("aports") => Aports::new(cmd, remaining_args).run(),
+        Some("aptree") => Aptree::new(cmd, remaining_args).run(),
         Some("builder") => Builder::new(cmd, remaining_args).run(),
         Some("config") => Config::new(cmd, remaining_args).run(),
         Some("run") => Run::new(cmd, remaining_args).run(),
@@ -172,15 +185,21 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         Some("-h") | Some("--help") => print_help(&cmd),
         Some("-V") | Some("--version") => Ok(println!("{}", env!("CARGO_PKG_VERSION"))),
 
-        Some(other) => Err(format!(
-            "{cmd}: invalid argument '{other}'\nUse '{cmd} --help' to see available options."
-        )
-        .into()),
+        Some(other) => invalid_arg!(cmd, other),
         None => Run::new(cmd, remaining_args).run(),
     }
 }
 
-/// Main function with manual error handling to suppress automatic error messages
+/// Main entry point for ALPack.
+///
+/// This function uses a manual error handling strategy instead of returning
+/// a `Result` directly from `main`. This decision was made to:
+/// 1. Provide clean, user-friendly error messages via `eprintln!` without
+///    the technical clutter of a default Rust panic or debug trace.
+/// 2. Ensure a precise exit code (0 for success, 1 for failure) is returned
+///    to the shell, which is critical for script integration and CI/CD pipelines.
+/// 3. Maintain optimal performance by centralizing error dispatching at the
+///    top level, allowing the core logic to remain lean and focused.
 fn main() {
     let exit_code: i32 = match alpack() {
         Ok(()) => 0,
