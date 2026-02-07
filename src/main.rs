@@ -1,3 +1,9 @@
+//! ALPack - Alpine Linux RootFS Packaging Tool.
+//!
+//! This crate provides a comprehensive CLI for managing Alpine Linux rootfs
+//! environments, allowing for automated setup, package management, and
+//! repository indexing through a modular architecture.
+
 mod apk;
 mod aports;
 mod aptree;
@@ -24,6 +30,10 @@ use pico_args::Arguments;
 use std::env;
 use std::error::Error;
 
+/// Prints the help message and usage instructions to the console.
+///
+/// # Parameters
+/// - `cmd`: The binary name used to invoke the program.
 fn print_help(cmd: &str) -> Result<(), Box<dyn Error>> {
     println!(
         "{cmd} - Alpine Linux RootFS Packaging Tool
@@ -127,7 +137,14 @@ Examples:
     Ok(())
 }
 
-/// alpack is the main logic function of the program, returning a Result for error handling
+/// Core logic dispatcher for the ALPack CLI.
+///
+/// This function handles the initial environment parsing, identifies the
+/// requested command, and delegates execution to the appropriate module.
+///
+/// # Returns
+/// - `Ok(())` if the command executes successfully.
+/// - `Err` if argument parsing fails or a submodule returns an error.
 fn alpack() -> Result<(), Box<dyn Error>> {
     let cmd_str = env::args().next();
     let cmd = cmd_str
@@ -190,16 +207,12 @@ fn alpack() -> Result<(), Box<dyn Error>> {
     }
 }
 
-/// Main entry point for ALPack.
+/// Main entry point for the ALPack application.
 ///
-/// This function uses a manual error handling strategy instead of returning
-/// a `Result` directly from `main`. This decision was made to:
-/// 1. Provide clean, user-friendly error messages via `eprintln!` without
-///    the technical clutter of a default Rust panic or debug trace.
-/// 2. Ensure a precise exit code (0 for success, 1 for failure) is returned
-///    to the shell, which is critical for script integration and CI/CD pipelines.
-/// 3. Maintain optimal performance by centralizing error dispatching at the
-///    top level, allowing the core logic to remain lean and focused.
+/// This function centralizes error management and exit code reporting.
+/// It ensures that any errors propagated through the logic are displayed
+/// to the user without technical traces, while returning a standard
+/// exit code 1 for failures to ensure compatibility with shell scripts.
 fn main() {
     let exit_code: i32 = match alpack() {
         Ok(()) => 0,
