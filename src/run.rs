@@ -32,7 +32,7 @@ impl Run {
     /// * `Ok(())` - If the command was executed successfully.
     /// * `Err` - If an invalid argument is found or the execution fails.
     pub fn run(&self) -> Result<(), Box<dyn Error>> {
-        let sett = Settings::load_or_create();
+        let sett = Settings::load();
         let mut rootfs_dir = sett.set_rootfs();
         let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
 

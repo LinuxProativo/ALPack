@@ -28,7 +28,7 @@ impl Mirror {
     /// # Returns
     /// * `Ok(())` - Always returns success after ensuring values are present.
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let sett = Settings::load_or_create();
+        let sett = Settings::load();
 
         if self.mirror.as_deref().unwrap_or("").is_empty() {
             self.mirror = Some(sett.default_mirror);

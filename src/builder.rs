@@ -48,7 +48,7 @@ impl Builder {
         }
 
         let mut build_targets = Vec::new();
-        let sett = Settings::load_or_create();
+        let sett = Settings::load();
         let mut rootfs_dir = sett.set_rootfs();
         let mut force_key = false;
 

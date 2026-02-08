@@ -33,7 +33,7 @@ impl Config {
     /// * `Err` - If an invalid argument is provided or parsing fails.
     pub fn run(&self) -> Result<(), Box<dyn Error>> {
         let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
-        let mut sett = Settings::load_or_create();
+        let mut sett = Settings::load();
 
         while let Some(arg) = args.pop_front() {
             match arg {

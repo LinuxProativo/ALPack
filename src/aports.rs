@@ -43,7 +43,7 @@ impl Aports {
             return missing_arg!("aports");
         }
 
-        let sett = Settings::load_or_create();
+        let sett = Settings::load();
         let mut rootfs_dir = sett.set_rootfs();
         let (mut search_pkg, mut get_pkg) = (Vec::new(), Vec::new());
 

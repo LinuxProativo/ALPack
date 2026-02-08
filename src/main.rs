@@ -148,7 +148,9 @@ Examples:
 /// - `Ok(())` if the command executes successfully.
 /// - `Err` if argument parsing fails or a submodule returns an error.
 fn alpack() -> Result<(), Box<dyn Error>> {
+    utils::get_safe_home();
     let cmd = get_app_name();
+
     let mut pargs = Arguments::from_env();
     let command: Option<String> = pargs.opt_free_from_str().ok().flatten();
 
@@ -193,14 +195,14 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         Some("aptree") => Aptree::new(remaining_args).run(),
         Some("builder") => Builder::new(remaining_args).run(),
         Some("config") => Config::new(remaining_args).run(),
-        Some("run") => Run::new(cmd, remaining_args).run(),
-        Some("setup") => Setup::new(cmd, remaining_args).run(),
+        Some("run") => Run::new(remaining_args).run(),
+        Some("setup") => Setup::new(remaining_args).run(),
 
         Some("-h") | Some("--help") => print_help(&cmd),
         Some("-V") | Some("--version") => Ok(println!("{}", env!("CARGO_PKG_VERSION"))),
 
         Some(other) => invalid_arg!(other),
-        None => Run::new(cmd, remaining_args).run(),
+        None => Run::new(remaining_args).run(),
     }
 }
 

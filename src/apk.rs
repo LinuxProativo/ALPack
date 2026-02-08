@@ -66,7 +66,7 @@ impl Apk {
     fn run_apk(&self, cmd: &str) -> Result<(), Box<dyn Error>> {
         let rootfs = match self.rootfs.as_deref().filter(|s| !s.is_empty()) {
             Some(r) => r.to_string(),
-            None => Settings::load_or_create().set_rootfs(),
+            None => Settings::load().set_rootfs(),
         };
 
         let full_cmd = if self.remaining_args.is_empty() {

@@ -38,7 +38,7 @@ impl Command {
         ignore_extra_bind: bool,
         no_group: bool,
     ) -> Result<i32, Box<dyn std::error::Error>> {
-        let sett = Settings::load_or_create();
+        let sett = Settings::load();
         utils::check_rootfs_exists(rootfs)?;
 
         let comm = sett.cmd_rootfs;
