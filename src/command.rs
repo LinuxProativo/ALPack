@@ -1,5 +1,12 @@
+//!
+
+unsafe extern "C" {
+    fn getuid() -> u32;
+    fn geteuid() -> u32;
+}
+
 use crate::settings::Settings;
-use crate::utils;
+use crate::{concat_path, utils};
 
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
@@ -10,8 +17,11 @@ pub struct Command;
 impl Command {
     pub fn run(
         rootfs: &str,
-        args_bind: Option<String>, cmd: Option<String>,
-        use_root: bool, ignore_extra_bind: bool, no_group: bool,
+        args_bind: Option<String>,
+        cmd: Option<String>,
+        use_root: bool,
+        ignore_extra_bind: bool,
+        no_group: bool,
     ) -> Result<i32, Box<dyn std::error::Error>> {
         let sett = Settings::load_or_create();
         let cmd_path = env::current_exe().unwrap();
@@ -22,21 +32,32 @@ impl Command {
         let rootfs_cmd = utils::verify_and_download_rootfs_command(&comm)?;
 
         let args = match comm.as_str() {
-            "proot" => Self::build_proot_options(rootfs, args_bind.unwrap_or_default(), ignore_extra_bind, no_group),
-            "bwrap" => Self::build_bwrap_options(rootfs, args_bind.unwrap_or_default(), ignore_extra_bind, no_group),
+            "proot" => Self::build_proot_options(
+                rootfs,
+                args_bind.unwrap_or_default(),
+                ignore_extra_bind,
+                no_group,
+            ),
+            "bwrap" => Self::build_bwrap_options(
+                rootfs,
+                args_bind.unwrap_or_default(),
+                ignore_extra_bind,
+                no_group,
+            ),
             other => return Err(format!("Unsupported rootfs command: {}", other).into()),
         };
 
         let new_cmd = cmd.unwrap_or_default();
         let mut full_args: Vec<&str> = args.split_whitespace().collect();
 
-        let uid = Self::get_uid_from_passwd();
+        let (uid, euid) = unsafe { (getuid(), geteuid()) };
+
         let str = match (comm.as_str(), use_root) {
             ("proot", true) => "PS1=# |USER=root|LOGNAME=root|UID=0|EUID=0".to_string(),
-            ("proot", false) => format!("PS1=$ |UID={uid}|EUID={uid}"),
+            ("proot", false) => format!("PS1=$ |UID={uid}|EUID={euid}"),
             ("bwrap", true) => "PS1=# ".to_string(),
-            ("bwrap", false) => format!("PS1=$ |UID={uid}|EUID={uid}"),
-            _ => format!("PS1=$ |UID={uid}|EUID={uid}"),
+            ("bwrap", false) => format!("PS1=$ |UID={uid}|EUID={euid}"),
+            _ => format!("PS1=$ |UID={uid}|EUID={euid}"),
         };
 
         if comm == "proot" && use_root {
@@ -57,7 +78,7 @@ impl Command {
         full_args.extend([
             "SHELL=/bin/sh",
             "PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec",
-            "/bin/sh"
+            "/bin/sh",
         ]);
 
         if !new_cmd.is_empty() {
@@ -84,13 +105,21 @@ impl Command {
     ///
     /// # Returns
     /// * `String` - A full string of PRoot options to be passed to the command.
-    fn build_proot_options(rootfs: &str, rootfs_args: String, no_extra_binds: bool, no_group: bool) -> String {
+    fn build_proot_options(
+        rootfs: &str,
+        rootfs_args: String,
+        no_extra_binds: bool,
+        no_group: bool,
+    ) -> String {
         let mut proot_options = format!("-R {rootfs} --bind=/media --bind=/mnt {rootfs_args}");
 
         if no_group {
-            proot_options.push_str(format!(
-                " --bind={rootfs}/etc/group:/etc/group \
-                  --bind={rootfs}/etc/passwd:/etc/passwd").as_str()
+            proot_options.push_str(
+                format!(
+                    " --bind={rootfs}/etc/group:/etc/group \
+                  --bind={rootfs}/etc/passwd:/etc/passwd"
+                )
+                .as_str(),
             );
         }
 
@@ -143,8 +172,12 @@ impl Command {
     ///
     /// # Returns
     /// A `String` containing the constructed Bubblewrap options.
-    fn build_bwrap_options(rootfs: &str, rootfs_args: String, ignore_extra_binds: bool, no_group: bool) -> String {
-
+    fn build_bwrap_options(
+        rootfs: &str,
+        rootfs_args: String,
+        ignore_extra_binds: bool,
+        no_group: bool,
+    ) -> String {
         let mut bwrap_options = format!(
             "--unshare-user \
              --share-net \
@@ -173,7 +206,7 @@ impl Command {
         if !no_group {
             bwrap_options.push_str(
                 " --ro-bind-try /etc/passwd /etc/passwd \
-                --ro-bind-try /etc/group /etc/group"
+                --ro-bind-try /etc/group /etc/group",
             );
         }
 
@@ -215,26 +248,6 @@ impl Command {
         }
 
         bwrap_options
-    }
-
-
-    /// Attempts to retrieve the current user's UID by parsing `/etc/passwd`.
-    ///
-    /// # Returns
-    /// * `u32` - The UID of the current user, or `1000` if not found.
-    fn get_uid_from_passwd() -> u32 {
-        let username = env::var("USER").or_else(|_| env::var("LOGNAME")).unwrap_or_default();
-        let passwd = fs::read_to_string("/etc/passwd").unwrap_or_default();
-
-        if username.is_empty() || passwd.is_empty() {
-            eprintln!("\x1b[1;33mWarning\x1b[0m: UID could not be determined, using fallback UID: 1000");
-            return 1000
-        }
-
-        passwd.lines()
-            .find(|line| line.starts_with(&username))
-            .and_then(|line| line.split(':').nth(2))
-            .and_then(|uid| uid.parse::<u32>().ok()).unwrap_or(1000)
     }
 
     /// Ensures `/etc/mtab` inside the rootfs points to `/proc/self/mounts`.
@@ -289,4 +302,3 @@ impl Command {
         Ok(())
     }
 }
-
