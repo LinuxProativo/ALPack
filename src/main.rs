@@ -192,7 +192,7 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         Some("aports") => Aports::new(remaining_args).run(),
         Some("aptree") => Aptree::new(remaining_args).run(),
         Some("builder") => Builder::new(remaining_args).run(),
-        Some("config") => Config::new(cmd, remaining_args).run(),
+        Some("config") => Config::new(remaining_args).run(),
         Some("run") => Run::new(cmd, remaining_args).run(),
         Some("setup") => Setup::new(cmd, remaining_args).run(),
 
