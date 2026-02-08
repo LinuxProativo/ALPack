@@ -21,9 +21,7 @@ pub struct Aports {
 impl Aports {
     /// Creates a new `Aports` instance with the given context and arguments.
     pub fn new(remaining_args: Vec<String>) -> Self {
-        Aports {
-            remaining_args,
-        }
+        Aports { remaining_args }
     }
 
     /// Executes the aports command logic based on the provided arguments.
