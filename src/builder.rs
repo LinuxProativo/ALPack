@@ -17,18 +17,15 @@ use std::io::{BufRead, BufReader};
 use std::{env, fs};
 
 /// Controller for automated Alpine Linux package compilation.
-pub struct Builder<'a> {
-    /// The name of the current execution context.
-    name: &'a str,
+pub struct Builder {
     /// Arguments passed from the CLI for processing.
     remaining_args: Vec<String>,
 }
 
-impl<'a> Builder<'a> {
+impl Builder {
     /// Creates a new `Builder` instance with the given context and arguments.
-    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
+    pub fn new(remaining_args: Vec<String>) -> Self {
         Builder {
-            name,
             remaining_args,
         }
     }
@@ -49,7 +46,7 @@ impl<'a> Builder<'a> {
         let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
 
         if args.is_empty() {
-            return missing_arg!(self.name, "builder");
+            return missing_arg!("builder");
         }
 
         let mut build_targets = Vec::new();
@@ -79,7 +76,7 @@ impl<'a> Builder<'a> {
                     build_targets.extend(args.drain(..).map(|s| s.to_string()));
                     break;
                 }
-                _ => return invalid_arg!(self.name, "builder", arg),
+                _ => return invalid_arg!("builder", arg),
             }
         }
 
