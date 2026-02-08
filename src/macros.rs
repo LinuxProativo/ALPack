@@ -10,22 +10,23 @@
 /// the offending argument, and a helpful tip to use the `--help` flag.
 #[macro_export]
 macro_rules! invalid_arg {
-    ($cmd:expr, $sub:expr, $other:expr) => {{
+    ($sub:expr, $other:expr) => {{
+        let c = crate::utils::APP_NAME.wait();
         let context = if $sub.is_empty() {
-            $cmd.to_string()
+            c.to_string()
         } else {
-            format!("{}: {}", $cmd, $sub)
+            format!("{c}: {}", $sub)
         };
 
         Err(format!(
-            "{}: invalid argument '{}'\nUse '{} --help' to see available options.",
-            context, $other, $cmd
+            "{}: invalid argument '{}'\nUse '{c} --help' to see available options.",
+            context, $other
         )
         .into())
     }};
 
-    ($cmd:expr, $other:expr) => {
-        $crate::invalid_arg!($cmd, "", $other)
+    ($other:expr) => {
+        $crate::invalid_arg!("", $other)
     };
 }
 
@@ -36,18 +37,18 @@ macro_rules! invalid_arg {
 /// 2. **Essential**: Used when a core parameter required for the operation is absent.
 #[macro_export]
 macro_rules! missing_arg {
-    ($cmd:expr, $sub:expr, essential) => {{
+    ($sub:expr, essential) => {{
         let err = format!(
-            "{}: {}: no essential parameter specified\nUse '{} --help' to see available options.",
-            $cmd, $sub, $cmd
+            "{c}: {s}: no essential parameter specified\nUse '{c} --help' to see available options.",
+            c = crate::utils::APP_NAME.wait(), s = $sub
         );
         Err(err.into())
     }};
 
-    ($cmd:expr, $sub:expr) => {{
+    ($sub:expr) => {{
         let err = format!(
-            "{}: {}: no parameter specified\nUse '{} --help' to see available options.",
-            $cmd, $sub, $cmd
+            "{c}: {s}: no parameter specified\nUse '{c} --help' to see available options.",
+            c = crate::utils::APP_NAME.wait(), s = $sub
         );
         Err(err.into())
     }};
@@ -158,5 +159,27 @@ macro_rules! parse_key_value {
 
     ($sub:expr, $val_name:expr, $arg:expr) => {
         $crate::parse_key_value!($sub, $val_name, $arg, Option::<&str>::None)
+    };
+}
+
+/// Facilitates the addition of filesystem binds to a Bubblewrap option string.
+///
+/// Bubblewrap requires a source and a destination for each bind (e.g., `--ro-bind /src /src`).
+/// This macro automates the repetition of the path and ensures proper spacing between
+/// arguments to prevent command-line parsing errors.
+///
+/// # Arguments
+/// * `$options` - The target `String` (usually `bwrap_options`).
+/// * `$type` - The bind flag (e.g., "--bind", "--ro-bind", "--bind-try").
+/// * `$path` - The path to be bound (used for both source and destination).
+#[macro_export]
+macro_rules! push_bind {
+    ($options:expr, $type:expr, $path:expr) => {
+        $options.push_str(" ");
+        $options.push_str($type);
+        $options.push_str(" ");
+        $options.push_str($path);
+        $options.push_str(" ");
+        $options.push_str($path);
     };
 }

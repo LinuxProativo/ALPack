@@ -1,4 +1,8 @@
+//! System command execution and isolation management.
 //!
+//! This module orchestrates process execution within isolated environments
+//! using PRoot or Bubblewrap. It manages user identities via native syscalls,
+//! handles filesystem bindings, and ensures rootfs environment integrity.
 
 unsafe extern "C" {
     fn getuid() -> u32;
@@ -6,15 +10,25 @@ unsafe extern "C" {
 }
 
 use crate::settings::Settings;
-use crate::{concat_path, utils};
+use crate::{concat_path, push_bind, utils};
 
-use std::path::{Path, PathBuf};
+use std::os::unix;
 use std::process::{Command as StdCommand, Stdio};
-use std::{env, fs, io};
+use std::{env, fs};
 
+/// Controller for isolated process execution.
 pub struct Command;
 
 impl Command {
+    /// Executes a command within a specified rootfs using isolation tools.
+    ///
+    /// Dynamically selects between PRoot and Bubblewrap based on system settings,
+    /// configures environment variables (PS1, PATH, UID), and manages
+    /// container-to-host filesystem mapping.
+    ///
+    /// # Returns
+    /// - `Ok(i32)` representing the process exit code.
+    /// - `Err` if the isolation tool fails to launch or rootfs is invalid.
     pub fn run(
         rootfs: &str,
         args_bind: Option<String>,
@@ -24,9 +38,7 @@ impl Command {
         no_group: bool,
     ) -> Result<i32, Box<dyn std::error::Error>> {
         let sett = Settings::load_or_create();
-        let cmd_path = env::current_exe().unwrap();
-        let name = &cmd_path.file_name().unwrap().to_string_lossy();
-        utils::check_rootfs_exists(name, rootfs)?;
+        utils::check_rootfs_exists(rootfs)?;
 
         let comm = sett.cmd_rootfs;
         let rootfs_cmd = utils::verify_and_download_rootfs_command(&comm)?;
@@ -96,15 +108,16 @@ impl Command {
         Ok(status.code().unwrap_or(-1))
     }
 
-    /// Builds the PRoot command-line options string.
+    /// Generates PRoot-specific configuration arguments.
     ///
     /// # Parameters
-    /// - `rootfs`: Path to the root filesystem to be used with PRoot.
-    /// - `rootfs_args`: Additional arguments to append to the PRoot command.
-    /// - `no_extra_binds`: If true, skip adding optional binds like fonts and icons.
+    /// * `rootfs` - Guest root directory.
+    /// * `rootfs_args` - Raw bind string from user arguments.
+    /// * `no_extra_binds` - Flag to skip optional host configurations.
+    /// * `no_group` - Flag to skip mapping host identity files.
     ///
     /// # Returns
-    /// * `String` - A full string of PRoot options to be passed to the command.
+    /// A space-delimited `String` of PRoot CLI options.
     fn build_proot_options(
         rootfs: &str,
         rootfs_args: String,
@@ -116,40 +129,36 @@ impl Command {
         if no_group {
             proot_options.push_str(
                 format!(
-                    " --bind={rootfs}/etc/group:/etc/group \
-                  --bind={rootfs}/etc/passwd:/etc/passwd"
+                    " --bind={rootfs}/etc/group:/etc/group --bind={rootfs}/etc/passwd:/etc/passwd"
                 )
                 .as_str(),
             );
         }
 
         if !no_extra_binds {
-            if Path::new("/etc/asound.conf").exists() {
-                proot_options.push_str(" --bind=/etc/asound.conf");
-            }
-            if Path::new("/etc/fonts").exists() {
-                proot_options.push_str(" --bind=/etc/fonts");
-            }
-            if Path::new("/usr/share/font-config").exists() {
-                proot_options.push_str(" --bind=/usr/share/font-config");
-            }
-            if Path::new("/usr/share/fontconfig").exists() {
-                proot_options.push_str(" --bind=/usr/share/fontconfig");
-            }
-            if Path::new("/usr/share/fonts").exists() {
-                proot_options.push_str(" --bind=/usr/share/fonts");
-            }
-            if Path::new("/usr/share/themes").exists() {
-                proot_options.push_str(" --bind=/usr/share/themes");
+            let extra_paths = [
+                "/etc/asound.conf",
+                "/etc/fonts",
+                "/usr/share/font-config",
+                "/usr/share/fontconfig",
+                "/usr/share/fonts",
+                "/usr/share/themes",
+            ];
+
+            for path in extra_paths {
+                if fs::metadata(path).is_ok() {
+                    proot_options.push_str(" --bind=");
+                    proot_options.push_str(path);
+                }
             }
 
             if let Ok(entries) = fs::read_dir("/usr/share/icons") {
                 for entry in entries.flatten() {
-                    let path = entry.path().join("cursors");
-                    if path.is_dir() {
-                        if let Some(dir_str) = path.to_str() {
+                    if let Ok(name) = entry.file_name().into_string() {
+                        let cursor_path = concat_path!("/usr/share/icons", &name, "cursors");
+                        if fs::metadata(&cursor_path).map(|m| m.is_dir()).unwrap_or(false) {
                             proot_options.push_str(" --bind=");
-                            proot_options.push_str(dir_str);
+                            proot_options.push_str(&cursor_path);
                         }
                     }
                 }
@@ -159,19 +168,16 @@ impl Command {
         proot_options
     }
 
-    /// Builds the command-line options for running a program inside Bubblewrap.
+    /// Generates Bubblewrap-specific configuration arguments.
     ///
-    /// This function generates a set of `--bind` and `--ro-bind` options for `bwrap`,
-    /// based on the provided root filesystem, extra bind arguments, and whether
-    /// to include additional system paths.
-    ///
-    /// # Parameters
-    /// - `rootfs`: Path to the root filesystem.
-    /// - `rootfs_args`: Additional bind arguments passed as a string.
-    /// - `ignore_extra_binds`: If `true`, skip adding extra system binds.
+    /// # Arguments
+    /// * `rootfs` - Guest root directory.
+    /// * `rootfs_args` - Raw bind string from user arguments.
+    /// * `ignore_extra_binds` - Flag to skip optional host configurations.
+    /// * `no_group` - Flag to skip mapping host identity files.
     ///
     /// # Returns
-    /// A `String` containing the constructed Bubblewrap options.
+    /// A space-delimited `String` of Bubblewrap CLI options.
     fn build_bwrap_options(
         rootfs: &str,
         rootfs_args: String,
@@ -201,46 +207,43 @@ impl Command {
              --bind /media /media \
              --bind /mnt /mnt \
              {rootfs_args} \
-             --setenv PATH \"/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec\"", a = env::var("HOME").unwrap());
+             --setenv PATH \"/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec\"",
+            a = env::var("HOME").unwrap_or_else(|_| "/root".into()),
+        );
 
         if !no_group {
             bwrap_options.push_str(
-                " --ro-bind-try /etc/passwd /etc/passwd \
-                --ro-bind-try /etc/group /etc/group",
+                " --ro-bind-try /etc/passwd /etc/passwd --ro-bind-try /etc/group /etc/group",
             );
         }
 
-        Self::fix_mtab_symlink(Path::new(rootfs)).unwrap();
+        Self::fix_mtab_symlink(rootfs);
 
         if !ignore_extra_binds {
-            if Path::new("/etc/asound.conf").exists() {
-                bwrap_options.push_str(" --ro-bind /etc/asound.conf /etc/asound.conf");
-            }
-            if Path::new("/etc/fonts").exists() {
-                bwrap_options.push_str(" --ro-bind /etc/fonts /etc/fonts");
-            }
-            if Path::new("/usr/share/font-config").exists() {
-                bwrap_options.push_str(" --ro-bind /usr/share/font-config /usr/share/font-config");
-            }
-            if Path::new("/usr/share/fontconfig").exists() {
-                bwrap_options.push_str(" --ro-bind /usr/share/fontconfig /usr/share/fontconfig");
-            }
-            if Path::new("/usr/share/fonts").exists() {
-                bwrap_options.push_str(" --ro-bind /usr/share/fonts /usr/share/fonts");
-            }
-            if Path::new("/usr/share/themes").exists() {
-                bwrap_options.push_str(" --ro-bind /usr/share/themes /usr/share/themes");
+            let extra_paths = [
+                "/etc/asound.conf",
+                "/etc/fonts",
+                "/usr/share/font-config",
+                "/usr/share/fontconfig",
+                "/usr/share/fonts",
+                "/usr/share/themes",
+            ];
+
+            for path in extra_paths {
+                if fs::metadata(path).is_ok() {
+                    push_bind!(bwrap_options, "--ro-bind", path);
+                }
             }
 
             if let Ok(entries) = fs::read_dir("/usr/share/icons") {
                 for entry in entries.flatten() {
-                    let path = entry.path().join("cursors");
-                    if path.is_dir() {
-                        if let Some(dir_str) = path.to_str() {
-                            bwrap_options.push_str(" --ro-bind ");
-                            bwrap_options.push_str(dir_str);
-                            bwrap_options.push(' ');
-                            bwrap_options.push_str(dir_str);
+                    if let Ok(name) = entry.file_name().into_string() {
+                        let cursor_path = concat_path!("/usr/share/icons", &name, "cursors");
+                        if fs::metadata(&cursor_path)
+                            .map(|m| m.is_dir())
+                            .unwrap_or(false)
+                        {
+                            push_bind!(bwrap_options, "--ro-bind", &cursor_path);
                         }
                     }
                 }
@@ -254,51 +257,23 @@ impl Command {
     ///
     /// # Parameters
     /// - `rootfs`: Path to the root filesystem.
-    pub fn fix_mtab_symlink(rootfs: &Path) -> io::Result<()> {
-        use std::os::unix::fs::symlink;
+    fn fix_mtab_symlink(rootfs: &str) {
+        let mtab_path = concat_path!(rootfs, "etc", "mtab");
+        let target = "/proc/self/mounts";
 
-        let mtab_path: PathBuf = rootfs.join("etc/mtab");
-        let desired_target = Path::new("/proc/self/mounts");
-
-        if let Some(parent) = mtab_path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                eprintln!("Warning: failed to create parent dir {:?}: {}", parent, e);
+        if let Ok(existing_target) = fs::read_link(&mtab_path) {
+            if existing_target.to_string_lossy() == target {
+                return;
             }
         }
 
-        match fs::symlink_metadata(&mtab_path) {
-            Ok(meta) => {
-                if meta.file_type().is_symlink() {
-                    match fs::read_link(&mtab_path) {
-                        Ok(target) => {
-                            if target == desired_target {
-                                return Ok(());
-                            } else {
-                                if let Err(e) = fs::remove_file(&mtab_path) {
-                                    eprintln!("Warning: failed to remove existing symlink {:?}: {}", mtab_path, e);
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            if let Err(e) = fs::remove_file(&mtab_path) {
-                                eprintln!("Warning: failed to remove broken symlink {:?}: {}", mtab_path, e);
-                            }
-                        }
-                    }
-                } else {
-                    if let Err(e) = fs::remove_file(&mtab_path) {
-                        eprintln!("Warning: failed to remove existing file {:?}: {}", mtab_path, e);
-                    }
-                }
+        let _ = fs::remove_file(&mtab_path);
+        let etc_dir = concat_path!(rootfs, "etc");
+
+        if fs::create_dir_all(&etc_dir).is_ok() {
+            if let Err(e) = unix::fs::symlink(target, &mtab_path) {
+                eprintln!("\x1b[1;33mWarning\x1b[0m: Failed to fix mtab symlink: {}", e);
             }
-            Err(_) => {}
         }
-
-        if let Err(e) = symlink(desired_target, &mtab_path) {
-            eprintln!("Warning: failed to create symlink {:?} -> {:?}: {}", mtab_path, desired_target, e);
-            return Err(e);
-        }
-
-        Ok(())
     }
 }
