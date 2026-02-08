@@ -9,6 +9,7 @@ use crate::utils::{get_cmd_box, SEPARATOR};
 use crate::{collect_matches, concat_path, utils};
 
 use std::error::Error;
+use std::fs;
 
 /// Sets up a local repository database within the rootfs.
 ///
@@ -31,12 +32,18 @@ pub fn setup_repository(
     repo: &str,
     branches: &[&str],
 ) -> Result<(), Box<dyn Error>> {
-    let build_path = concat_path!(rootfs_dir, "build");
+    let build_path = concat_path!(rootfs_dir, "build", repo);
+    let database_path = concat_path!(rootfs_dir, "build", format!("{repo}-database"));
 
-    if std::fs::metadata(&build_path).is_ok() {
-        std::fs::remove_dir_all(&build_path)?;
+    if fs::metadata(&build_path).is_ok() {
+        fs::remove_dir_all(&build_path)?;
     }
-    std::fs::create_dir_all(&build_path)?;
+
+    if fs::metadata(&database_path).is_ok() {
+        fs::remove_file(&database_path)?;
+    }
+
+    fs::create_dir_all(&build_path)?;
 
     let filter = branches.join("|");
     let cmd_script = format!(
