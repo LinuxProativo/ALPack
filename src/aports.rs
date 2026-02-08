@@ -13,18 +13,15 @@ use std::error::Error;
 use std::fs;
 
 /// Controller for Alpine Linux repository operations.
-pub struct Aports<'a> {
-    /// The name of the current execution context.
-    name: &'a str,
+pub struct Aports {
     /// Arguments passed from the CLI for processing.
     remaining_args: Vec<String>,
 }
 
-impl<'a> Aports<'a> {
+impl Aports {
     /// Creates a new `Aports` instance with the given context and arguments.
-    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
+    pub fn new(remaining_args: Vec<String>) -> Self {
         Aports {
-            name,
             remaining_args,
         }
     }
@@ -45,7 +42,7 @@ impl<'a> Aports<'a> {
         let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
 
         if args.is_empty() {
-            return missing_arg!(self.name, "aports");
+            return missing_arg!("aports");
         }
 
         let sett = Settings::load_or_create();
@@ -105,12 +102,12 @@ impl<'a> Aports<'a> {
                 "-R" | "--rootfs" => {
                     rootfs_dir = parse_key_value!("aports", "directory", arg, args.pop_front())?;
                 }
-                other => return invalid_arg!(self.name, "aports", other),
+                other => return invalid_arg!("aports", other),
             }
         }
 
         if !bk {
-            return missing_arg!(self.name, "aports", essential);
+            return missing_arg!("aports", essential);
         }
 
         if update {
@@ -126,7 +123,7 @@ impl<'a> Aports<'a> {
             }
         }
 
-        utils::check_rootfs_exists(self.name, &rootfs_dir)?;
+        utils::check_rootfs_exists(&rootfs_dir)?;
         let content = fs::read_to_string(concat_path!(rootfs_dir, "build", "aports-database"))?;
 
         if search {

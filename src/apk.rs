@@ -11,9 +11,7 @@ use crate::settings::Settings;
 use std::error::Error;
 
 /// Controller for interacting with the Alpine Package Manager.
-pub struct Apk<'a> {
-    /// The name of the current execution context.
-    name: &'a str,
+pub struct Apk {
     /// The specific apk subcommand to run.
     command: Option<String>,
     /// Additional arguments passed to the apk command.
@@ -22,16 +20,14 @@ pub struct Apk<'a> {
     rootfs: Option<String>,
 }
 
-impl<'a> Apk<'a> {
+impl Apk {
     /// Creates a new `Apk` instance with provided execution details.
     pub fn new(
-        name: &'a str,
         command: Option<String>,
         remaining_args: Vec<String>,
         rootfs: Option<String>,
     ) -> Self {
         Apk {
-            name,
             command,
             remaining_args,
             rootfs,
@@ -55,7 +51,7 @@ impl<'a> Apk<'a> {
             Some("-s") | Some("search") => self.run_apk("apk search"),
             Some("fix") => self.run_apk("apk fix"),
             Some(other) => self.run_apk(&format!("apk {other}")),
-            None => missing_arg!(self.name, "apk"),
+            None => missing_arg!("apk"),
         }
     }
 

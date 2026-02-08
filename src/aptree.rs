@@ -14,18 +14,15 @@ use std::error::Error;
 use std::fs;
 
 /// Controller for Adélie Linux repository operations.
-pub struct Aptree<'a> {
-    /// The name of the current execution context.
-    name: &'a str,
+pub struct Aptree {
     /// Arguments passed from the CLI for processing.
     remaining_args: Vec<String>,
 }
 
-impl<'a> Aptree<'a> {
+impl Aptree {
     /// Creates a new `Aptree` instance with the given context and arguments.
-    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
+    pub fn new(remaining_args: Vec<String>) -> Self {
         Aptree {
-            name,
             remaining_args,
         }
     }
@@ -47,7 +44,7 @@ impl<'a> Aptree<'a> {
         let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
 
         if args.is_empty() {
-            return missing_arg!(self.name, "aptree");
+            return missing_arg!("aptree");
         }
 
         let sett = Settings::load_or_create();
@@ -107,12 +104,12 @@ impl<'a> Aptree<'a> {
                 "-R" | "--rootfs" => {
                     rootfs_dir = parse_key_value!("aptree", "directory", arg, args.pop_front())?;
                 }
-                other => return invalid_arg!(self.name, "aptree", other),
+                other => return invalid_arg!("aptree", other),
             }
         }
 
         if !bk {
-            return missing_arg!(self.name, "aptree", essential);
+            return missing_arg!("aptree", essential);
         }
 
         if update {
@@ -128,7 +125,7 @@ impl<'a> Aptree<'a> {
             }
         }
 
-        utils::check_rootfs_exists(self.name, &rootfs_dir)?;
+        utils::check_rootfs_exists(&rootfs_dir)?;
         let content = fs::read_to_string(concat_path!(rootfs_dir, "build", "aptree-database"))?;
 
         if search {

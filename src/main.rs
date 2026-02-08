@@ -25,6 +25,7 @@ use crate::builder::Builder;
 use crate::config::Config;
 use crate::run::Run;
 use crate::setup::Setup;
+use crate::utils::get_app_name;
 
 use pico_args::Arguments;
 use std::env;
@@ -147,12 +148,7 @@ Examples:
 /// - `Ok(())` if the command executes successfully.
 /// - `Err` if argument parsing fails or a submodule returns an error.
 fn alpack() -> Result<(), Box<dyn Error>> {
-    let cmd_str = env::args().next();
-    let cmd = cmd_str
-        .as_deref()
-        .and_then(|s| s.rsplit('/').next())
-        .unwrap_or("ALPack");
-
+    let cmd = get_app_name();
     let mut pargs = Arguments::from_env();
     let command: Option<String> = pargs.opt_free_from_str().ok().flatten();
 
@@ -185,17 +181,17 @@ fn alpack() -> Result<(), Box<dyn Error>> {
                 }
             }
 
-            Apk::new(cmd, subcommand, subargs, rootfs).run()
+            Apk::new(subcommand, subargs, rootfs).run()
         }
 
         Some("add") | Some("del") | Some("install") | Some("remove") | Some("-s")
         | Some("search") | Some("update") | Some("fix") | Some("-u") => {
-            Apk::new(cmd, command, remaining_args, None).run()
+            Apk::new(command, remaining_args, None).run()
         }
 
-        Some("aports") => Aports::new(cmd, remaining_args).run(),
-        Some("aptree") => Aptree::new(cmd, remaining_args).run(),
-        Some("builder") => Builder::new(cmd, remaining_args).run(),
+        Some("aports") => Aports::new(remaining_args).run(),
+        Some("aptree") => Aptree::new(remaining_args).run(),
+        Some("builder") => Builder::new(remaining_args).run(),
         Some("config") => Config::new(cmd, remaining_args).run(),
         Some("run") => Run::new(cmd, remaining_args).run(),
         Some("setup") => Setup::new(cmd, remaining_args).run(),
@@ -203,7 +199,7 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         Some("-h") | Some("--help") => print_help(&cmd),
         Some("-V") | Some("--version") => Ok(println!("{}", env!("CARGO_PKG_VERSION"))),
 
-        Some(other) => invalid_arg!(cmd, other),
+        Some(other) => invalid_arg!(other),
         None => Run::new(cmd, remaining_args).run(),
     }
 }
