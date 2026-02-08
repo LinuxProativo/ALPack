@@ -10,11 +10,12 @@ unsafe extern "C" {
 }
 
 use crate::settings::Settings;
+use crate::utils::SAFE_HOME;
 use crate::{concat_path, push_bind, utils};
 
+use std::fs;
 use std::os::unix;
 use std::process::{Command as StdCommand, Stdio};
-use std::{env, fs};
 
 /// Controller for isolated process execution.
 pub struct Command;
@@ -156,7 +157,10 @@ impl Command {
                 for entry in entries.flatten() {
                     if let Ok(name) = entry.file_name().into_string() {
                         let cursor_path = concat_path!("/usr/share/icons", &name, "cursors");
-                        if fs::metadata(&cursor_path).map(|m| m.is_dir()).unwrap_or(false) {
+                        if fs::metadata(&cursor_path)
+                            .map(|m| m.is_dir())
+                            .unwrap_or(false)
+                        {
                             proot_options.push_str(" --bind=");
                             proot_options.push_str(&cursor_path);
                         }
@@ -208,7 +212,7 @@ impl Command {
              --bind /mnt /mnt \
              {rootfs_args} \
              --setenv PATH \"/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec\"",
-            a = env::var("HOME").unwrap_or_else(|_| "/root".into()),
+            a = SAFE_HOME.wait(),
         );
 
         if !no_group {
@@ -272,7 +276,7 @@ impl Command {
 
         if fs::create_dir_all(&etc_dir).is_ok() {
             if let Err(e) = unix::fs::symlink(target, &mtab_path) {
-                eprintln!("\x1b[1;33mWarning\x1b[0m: Failed to fix mtab symlink: {}", e);
+                eprintln!("\x1b[1;33mWarning\x1b[0m: Failed to fix mtab symlink: {e}");
             }
         }
     }
