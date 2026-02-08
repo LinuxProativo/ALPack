@@ -47,7 +47,7 @@ pub fn setup_repository(
 
     let filter = branches.join("|");
     let cmd_script = format!(
-        "which git > /dev/null || apk add git
+        "type git > /dev/null || apk add git
         cd /build
         git clone --depth=1 --filter=tree:0 --no-checkout {url} {repo} 2> /dev/null
         cd {repo}
