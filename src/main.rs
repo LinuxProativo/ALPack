@@ -92,6 +92,7 @@ Options for 'aptree':
 Options for 'builder':
     -a, --apkbuild <APKBUILD>   Use a specific APKBUILD file as input
         --apkbuild=<APKBUILD>   Use a specific APKBUILD file as input (inline)
+        --force-key             Force regeneration of RSA signing keys
     -R, --rootfs <DIR>          Specify rootfs directory
         --rootfs=<DIR>          Specify rootfs directory (inline)
 

@@ -55,9 +55,11 @@ impl<'a> Builder<'a> {
         let mut build_targets = Vec::new();
         let sett = Settings::load_or_create();
         let mut rootfs_dir = sett.set_rootfs();
+        let mut force_key = false;
 
         while let Some(arg) = args.pop_front() {
             match arg {
+                "--force-key" => force_key = true,
                 a if a.starts_with("--rootfs=") => {
                     rootfs_dir = parse_key_value!("builder", "directory", arg)?;
                 }
@@ -89,7 +91,7 @@ impl<'a> Builder<'a> {
 
             if File::open(&potential_path).is_ok() {
                 pkg_name = Self::get_pkgname(&potential_path);
-                folder_name = p.split('/').last().unwrap_or("unknown");
+                folder_name = p.trim_end_matches('/').split('/').last().unwrap_or("unknown");
                 is_single_file = false;
             } else if p.ends_with("APKBUILD") && File::open(&p).is_ok() {
                 pkg_name = Self::get_pkgname(&p);
@@ -118,7 +120,7 @@ impl<'a> Builder<'a> {
                 utils::copy_dir_recursive(p.as_ref(), build_path.as_ref())?;
             }
 
-            Self::run_abuild(&rootfs_dir, folder_name, &pkg_name)?;
+            Self::run_abuild(&rootfs_dir, folder_name, &pkg_name, force_key)?;
         }
 
         Ok(())
@@ -160,25 +162,24 @@ impl<'a> Builder<'a> {
     /// * `rootfs` - Path to the root filesystem.
     /// * `dir_name` - The subdirectory name for the build context.
     /// * `pkg` - The package name for final APK installation.
+    /// * `force_key` - If true, regenerates RSA keys even if they exist.
     ///
     /// # Returns
     /// * `Ok(())` - If the `abuild` command executes successfully.
     /// * `Err` - If there is any error during execution, return a boxed `dyn Error`.
-    fn run_abuild(rootfs: &str, dir_name: &str, pkg: &str) -> Result<(), Box<dyn Error>> {
+    fn run_abuild(rootfs: &str, dir_name: &str, pkg: &str, force_key: bool) -> Result<(), Box<dyn Error>> {
         let user = env::var("USER").unwrap_or_else(|_| "root".into());
         let keys_dir = concat_path!(rootfs, "etc/apk/keys");
 
-        let has_keys = fs::read_dir(&keys_dir)
-            .map(|mut entries| {
-                entries.any(|e| {
-                    e.ok().map_or(false, |en| {
-                        en.file_name().to_string_lossy().ends_with(".rsa.pub")
-                    })
-                })
-            })
+        let has_user_key = fs::read_dir(&keys_dir)
+            .map(|entries| entries.filter_map(Result::ok).any(|en| {
+                let binding = en.file_name();
+                let name = binding.to_string_lossy();
+                name.starts_with(&user) && name.ends_with(".rsa.pub")
+            }))
             .unwrap_or(false);
 
-        if !has_keys {
+        if force_key || !has_user_key {
             let abuild_config = concat_path!(rootfs, "build/.abuild");
             if fs::metadata(&abuild_config).is_ok() {
                 fs::remove_dir_all(&abuild_config)?;
