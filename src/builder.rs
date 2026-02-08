@@ -25,9 +25,7 @@ pub struct Builder {
 impl Builder {
     /// Creates a new `Builder` instance with the given context and arguments.
     pub fn new(remaining_args: Vec<String>) -> Self {
-        Builder {
-            remaining_args,
-        }
+        Builder { remaining_args }
     }
 
     /// Executes the builder command logic based on the provided arguments.
@@ -88,7 +86,11 @@ impl Builder {
 
             if File::open(&potential_path).is_ok() {
                 pkg_name = Self::get_pkgname(&potential_path);
-                folder_name = p.trim_end_matches('/').split('/').last().unwrap_or("unknown");
+                folder_name = p
+                    .trim_end_matches('/')
+                    .split('/')
+                    .last()
+                    .unwrap_or("unknown");
                 is_single_file = false;
             } else if p.ends_with("APKBUILD") && File::open(&p).is_ok() {
                 pkg_name = Self::get_pkgname(&p);
@@ -164,16 +166,23 @@ impl Builder {
     /// # Returns
     /// * `Ok(())` - If the `abuild` command executes successfully.
     /// * `Err` - If there is any error during execution, return a boxed `dyn Error`.
-    fn run_abuild(rootfs: &str, dir_name: &str, pkg: &str, force_key: bool) -> Result<(), Box<dyn Error>> {
+    fn run_abuild(
+        rootfs: &str,
+        dir_name: &str,
+        pkg: &str,
+        force_key: bool,
+    ) -> Result<(), Box<dyn Error>> {
         let user = env::var("USER").unwrap_or_else(|_| "root".into());
         let keys_dir = concat_path!(rootfs, "etc/apk/keys");
 
         let has_user_key = fs::read_dir(&keys_dir)
-            .map(|entries| entries.filter_map(Result::ok).any(|en| {
-                let binding = en.file_name();
-                let name = binding.to_string_lossy();
-                name.starts_with(&user) && name.ends_with(".rsa.pub")
-            }))
+            .map(|entries| {
+                entries.filter_map(Result::ok).any(|en| {
+                    let binding = en.file_name();
+                    let name = binding.to_string_lossy();
+                    name.starts_with(&user) && name.ends_with(".rsa.pub")
+                })
+            })
             .unwrap_or(false);
 
         if force_key || !has_user_key {

@@ -5,7 +5,7 @@
 //! feature, optimized for minimal disk I/O and network usage.
 
 use crate::command::Command;
-use crate::utils::{get_cmd_box, SEPARATOR};
+use crate::utils::{SEPARATOR, get_cmd_box};
 use crate::{collect_matches, concat_path, utils};
 
 use std::error::Error;

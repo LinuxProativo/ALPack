@@ -22,15 +22,13 @@ pub struct Aptree {
 impl Aptree {
     /// Creates a new `Aptree` instance with the given context and arguments.
     pub fn new(remaining_args: Vec<String>) -> Self {
-        Aptree {
-            remaining_args,
-        }
+        Aptree { remaining_args }
     }
 
     /// Executes the aptree command logic based on the provided arguments.
     ///
-    /// Manages the full lifecycle of Adélie package interactions, including 
-    /// updating the local index from the official Adélie Git mirror and 
+    /// Manages the full lifecycle of Adélie package interactions, including
+    /// updating the local index from the official Adélie Git mirror and
     /// performing optimized searches.
     ///
     /// # Performance
