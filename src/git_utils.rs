@@ -49,9 +49,9 @@ pub fn setup_repository(
     let cmd_script = format!(
         "type git > /dev/null || apk add git
         cd /build
-        git clone --depth=1 --filter=tree:0 --no-checkout {url} {repo} 2> /dev/null
-        cd {repo}
-        git fetch --depth=1 --filter=tree:0
+        git clone --depth=1 --filter=tree:0 --no-checkout {url} {repo} && \
+        cd {repo} && \
+        git fetch --depth=1 --filter=tree:0 && \
         git ls-tree -r HEAD --name-only | grep -E \"({filter})\" > ../{repo}-database",
     );
 
@@ -101,7 +101,7 @@ pub fn fetch_package_files(
     }
 
     let cmd = format!(
-        "cd /build/{repo_name} && \
+        "cd /build/{repo_name}
          git sparse-checkout init --cone && \
          git sparse-checkout set {} && \
          git checkout",
