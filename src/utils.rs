@@ -1,20 +1,36 @@
+//! Utility functions for ALPack.
+//!
+//! Provides helper methods for path manipulation, environment discovery,
+//! file downloads, and stylized terminal output.
+
+use crate::concat_path;
 use crate::settings::Settings;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use std::error::Error;
 use std::fs::File;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::{env, fs, io};
 use walkdir_minimal::WalkDir;
 use which::which;
 
+/// Progress bar template for downloads and extractions.
 pub const DOWNLOAD_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})";
+
+/// Visual separator for terminal output.
 pub const SEPARATOR: &str = "════════════════════════════════════════════════════════════";
+
+/// Cached application name.
 pub static APP_NAME: OnceLock<String> = OnceLock::new();
+
+/// Cached a safe home directory path.
 pub static SAFE_HOME: OnceLock<String> = OnceLock::new();
 
+/// Retrieves the safe home directory from the environment.
+///
+/// # Returns
+/// - A string slice representing the user's home directory.
 pub fn get_safe_home() -> &'static str {
     SAFE_HOME.get_or_init(|| env::var("HOME").unwrap_or_else(|_| ".".to_string()))
 }
@@ -22,7 +38,7 @@ pub fn get_safe_home() -> &'static str {
 /// Retrieves the current application name from the execution path.
 ///
 /// # Returns
-/// A string slice containing the binary name or "ALPack" as fallback.
+/// - A string slice containing the binary name or "ALPack" as fallback.
 pub fn get_app_name() -> &'static str {
     APP_NAME.get_or_init(|| {
         env::args()
@@ -34,20 +50,17 @@ pub fn get_app_name() -> &'static str {
     })
 }
 
-/// Determines the architecture string to use.
+/// Determines the target architecture string.
 ///
 /// # Returns
-/// * `String` - A string representing the architecture (e.g., "x86_64", "aarch64").
+/// - A string representing the CPU architecture (e.g., "x86_64").
 pub fn get_arch() -> String {
     env::var("ALPACK_ARCH")
         .or_else(|_| env::var("ARCH"))
         .unwrap_or_else(|_| env::consts::ARCH.to_string())
 }
 
-/// Displays a final setup message with styled formatting.
-///
-/// # Arguments
-/// * `cmd` - The base command to be used in the suggestion (e.g., "ALPack").
+/// Displays a success message upon completing the environment setup.
 pub fn finish_msg_setup() {
     let b = get_cmd_box(&format!("$ {} run", SAFE_HOME.wait()), Some(2), None).unwrap_or_default();
 
@@ -57,16 +70,16 @@ pub fn finish_msg_setup() {
     );
 }
 
-/// Verifies that the specified rootfs directory exists.
+/// Verifies that the specified rootfs directory exists and is accessible.
 ///
-/// # Arguments
-/// * `path` - A string slice that holds the path to the rootfs directory.
+/// # Parameters
+/// - `path`: The directory path to verify.
 ///
 /// # Returns
-/// * `Ok(())` if the directory exists.
-/// * `Err` with a descriptive message if the directory does not exist.
+/// - `Ok(())` if the directory exists.
+/// - `Err` with diagnostic info if missing.
 pub fn check_rootfs_exists(path: &str) -> Result<(), Box<dyn Error>> {
-    if !Path::new(path).is_dir() {
+    if !fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false) {
         let b = get_cmd_box(&format!("$ {} setup", APP_NAME.wait()), Some(2), None)?;
 
         return Err(format!(
@@ -78,21 +91,21 @@ pub fn check_rootfs_exists(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Generates a stylized box containing a command string.
+/// Generates a stylized Unicode box containing a command string.
 ///
-/// # Arguments
-/// * `name` - The name of the command (e.g., "ALPack").
+/// # Parameters
+/// - `command`: The text to be boxed.
+/// - `indent`: Optional number of leading spaces.
+/// - `size`: Optional fixed width for the box.
 ///
 /// # Returns
-/// A `String` that represents a multi-line box with the command inside.
+/// - A `String` containing the formatted box.
 pub fn get_cmd_box(
     command: &str,
     indent: Option<usize>,
     size: Option<usize>,
 ) -> Result<String, Box<dyn Error>> {
-    let rep = indent.unwrap_or(0);
-    let padding = " ".repeat(rep);
-
+    let padding = " ".repeat(indent.unwrap_or(0));
     let width = size.unwrap_or(50).max(command.len() + 4);
     let inner_width = width - 2;
 
@@ -114,23 +127,29 @@ pub fn get_cmd_box(
 ///
 /// # Returns
 /// * `io::Result<()>` - Ok on success, or an error if the operation fails.
-pub fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
-    println!("copy {} to {}", src.display(), dst.display());
-    let dir_name = src
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid directory"))?;
-    let dest_root = dst.join(dir_name);
+pub fn copy_dir_recursive(src: &str, dst: &str) -> io::Result<()> {
+    println!("copy {src} to {dst}");
+    let dir_name = src.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid source path"))?;
+    let dest_root = concat_path!(dst, dir_name);
 
     for entry in WalkDir::new(src)? {
-        let entry = entry.unwrap();
-        let relative_path = entry.path().strip_prefix(src).unwrap();
-        let dest_path = dest_root.join(relative_path);
+        let entry = entry.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let relative = entry
+            .path()
+            .strip_prefix(src)
+            .unwrap()
+            .to_str()
+            .unwrap_or("");
+        let dest_path = concat_path!(dest_root, relative);
 
         if entry.file_type()?.is_dir() {
             fs::create_dir_all(&dest_path)?;
         } else {
-            if let Some(parent) = dest_path.parent() {
-                fs::create_dir_all(parent)?;
+            if let Some(pos) = dest_path.rfind('/') {
+                let _ = fs::create_dir_all(&dest_path[..pos]);
             }
             fs::copy(entry.path(), &dest_path)?;
         }
@@ -147,23 +166,18 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 /// - `Ok(PathBuf)` with the successfully created directory path (either the target or fallback).
 /// - `Err(io::Error)` if both the target and fallback directory creations fail.
 pub fn create_dir_with_fallback(target: &str) -> io::Result<String> {
-    let target_path = Path::new(target);
-
-    match fs::create_dir_all(target_path) {
-        Ok(_) => return Ok(target.to_string()),
+    match fs::create_dir_all(target) {
+        Ok(_) => Ok(target.to_string()),
         Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
             eprintln!(
-                "\x1b[1;33mWarning\x1b[0m: Permission denied to create '{}', using default directory instead...",
-                target
+                "\x1b[1;33mWarning\x1b[0m: Permission denied to create '{target}', using default directory instead...",
             );
+            let path = Settings::load().set_rootfs();
+            fs::create_dir_all(&path)?;
+            Ok(path)
         }
-        Err(e) => return Err(e),
+        Err(e) => Err(e),
     }
-
-    let home = Settings::load_or_create().set_rootfs();
-    let fallback_path = Path::new(&home);
-    fs::create_dir_all(&fallback_path)?;
-    Ok(fallback_path.display().to_string())
 }
 
 /// Downloads a file from the specified URL and saves it to the destination folder.
@@ -178,9 +192,9 @@ pub fn create_dir_with_fallback(target: &str) -> io::Result<String> {
 /// * `Err`: An `io::Error` if the download or save fails.
 pub fn download_file(url: &str, dest: &str, filename: &str) -> io::Result<String> {
     let save_dest = create_dir_with_fallback(dest)?;
-    let save_file = format!("{save_dest}/{filename}");
+    let save_file = concat_path!(&save_dest, filename);
 
-    if Path::new(&save_file).exists() {
+    if fs::metadata(&save_file).is_ok() {
         println!("File '{}' already exists, skipping download.", filename);
         return Ok(save_dest);
     }
@@ -222,7 +236,7 @@ pub fn download_file(url: &str, dest: &str, filename: &str) -> io::Result<String
 /// # Returns
 /// * `Ok(())` if permissions were successfully updated.
 /// * `Err(io::Error)` if the file metadata cannot be read or permissions cannot be set.
-fn make_executable(path: &Path) -> io::Result<()> {
+fn make_executable(path: &str) -> io::Result<()> {
     let mut perms = fs::metadata(path)?.permissions();
     perms.set_mode(0o755);
     fs::set_permissions(path, perms)
@@ -256,16 +270,15 @@ fn binary_url(cmd: &str) -> Option<&'static str> {
 /// * `Ok(PathBuf)` - The full path to the resolved executable.
 /// * `Err(io::Error)` if the command is unsupported, the architecture is not supported,
 ///   the download fails or file permissions cannot be set.
-pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<PathBuf> {
+pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<String> {
     if let Some(path) = which(cmd_rootfs).ok() {
-        return Ok(path);
+        return Ok(path.to_str().unwrap_or(cmd_rootfs).to_string());
     }
 
-    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    let local_dir = PathBuf::from(home).join(".local").join("bin");
-    let local_path = local_dir.join(cmd_rootfs);
+    let local_dir = concat_path!(get_safe_home(), ".local/bin");
+    let local_path = concat_path!(local_dir, cmd_rootfs);
 
-    if local_path.exists() {
+    if fs::metadata(&local_path).is_ok() {
         return Ok(local_path);
     }
 
@@ -273,8 +286,7 @@ pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<PathBu
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             format!(
-                "{} not found in the system and no binary is available for this architecture",
-                cmd_rootfs
+                "{cmd_rootfs} not found in the system and no binary is available for this architecture",
             ),
         ));
     }
@@ -282,11 +294,10 @@ pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<PathBu
     let url = binary_url(cmd_rootfs)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid cmd_rootfs"))?;
 
-    fs::create_dir_all(&local_dir)?;
+    let _ = fs::create_dir_all(&local_dir)?;
 
-    let downloaded = download_file(url, local_dir.to_str().unwrap(), cmd_rootfs)?;
-    let downloaded_path = PathBuf::from(downloaded);
-    make_executable(&downloaded_path)?;
+    let downloaded = download_file(url, &local_dir, cmd_rootfs)?;
+    make_executable(&downloaded)?;
 
-    Ok(downloaded_path)
+    Ok(downloaded)
 }
