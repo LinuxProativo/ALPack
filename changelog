@@ -1,14 +1,36 @@
+Mon Feb 09 14:35:51 -03 2026:
+    - Update version to 4.0.0
+    - Update dependency: ureq
+    - Standardize code documentation (Rustdoc) with English comments
+    - Add --force-key parameter in builder to force RSA key creation
+    - Add --no-groups parameter for run options
+    - Add git_utils.rs for aports and aptree options
+    - Add macros.rs file for custom macros
+    - Add Adélie Package Tree support via aptree option
+    - Convert parse_key_value function to macro_rules!
+    - Refactor fix_mtab_symlink to avoid unnecessary error reporting
+    - Adjust and improve configuration view in settings
+    - Simplify package update and installation process in setup
+    - Consolidate commands into a single execution context to reduce overhead
+    - Refactor path handling to use concat_path! macro and reduce allocations
+    - Implement buffered I/O in extract_tar_gz for faster decompression
+    - Fix bug in HOME definition within settings
+    - Fix bug in config options when saving output_dir
+    - Use real uid and euid for rootfs sandbox execution
+    - Clean up code and fix bugs in builder and aports options
+    - Refactor and simplify error messages and main function
+    - General refactoring for high performance
 Fri Jan 30 21:19:00 -03 2026:
-    - fix copy apkbuild folder to build folder
-    - fallback if --apkbuild is dir
-    - fix no_group option
-    - add default install: glib-dev glib-static libtool
+    - Fix copy APKBUILD folder logic
+    - Add fallback if --apkbuild is a directory
+    - Fix --no-groups option behavior
+    - Add default packages: glib-dev, glib-static, libtool
 Fri Oct 24 20:02:13 -03 2025:
-    - update dependency scraper
-    - add default install: cmake go xz
-    - fix function for cache dir
+    - Update dependency: scraper
+    - Add default packages: cmake, go, xz
+    - Fix cache directory definition function
 Tue Sep 16 23:01:59 -03 2025:
-    - Code rewritten from shell to Rust
-    - AlpineBox has been renamed to ALPack
-    - Added configuration
+    - Core rewritten from Shell to Rust
+    - Project renamed from AlpineBox to ALPack
+    - Added persistent configuration system
     - Reviewed parameters and fixed unexpected bugs
