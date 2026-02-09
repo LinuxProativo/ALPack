@@ -1,8 +1,14 @@
+//! Environment setup orchestration.
+//!
+//! This module handles the initial preparation of the Alpine Linux environment,
+//! including mirror selection, version discovery, rootfs extraction, and
+//! provisioning of default packages.
+
 use crate::command::Command;
 use crate::mirror::Mirror;
 use crate::settings::Settings;
 use crate::utils::finish_msg_setup;
-use crate::{parse_key_value, utils};
+use crate::{concat_path, invalid_arg, parse_key_value, utils};
 
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -11,20 +17,21 @@ use scraper::{Html, Selector};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
-use std::io::Write;
-use std::path::Path;
-use std::sync::OnceLock;
+use std::io::{BufReader, Write};
 use std::{fs, io};
 use tar::Archive;
 
+/// Default packages installed when minimal mode is disabled.
 pub const DEF_PACKAGES: &str =
     "alpine-sdk autoconf automake cmake glib-dev glib-static libtool go xz";
 
-pub struct Setup<'a> {
-    name: &'a str,
+/// Controller for setting up the Alpine Linux rootfs environment.
+pub struct Setup {
+    /// Command line arguments not consumed by the main parser.
     remaining_args: Vec<String>,
 }
 
+/// Structured version components for semantic comparison.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct VersionKey {
     major: u32,
@@ -33,58 +40,55 @@ struct VersionKey {
     suffix: String,
 }
 
-impl<'a> Setup<'a> {
-    pub fn new(name: &'a str, remaining_args: Vec<String>) -> Self {
-        Setup {
-            name,
-            remaining_args,
-        }
+impl Setup {
+    /// Creates a new `Setup` instance.
+    pub fn new(remaining_args: Vec<String>) -> Self {
+        Setup { remaining_args }
     }
 
+    /// Orchestrates the setup process including version discovery and installation.
+    ///
+    /// This method parses setup-specific flags, identifies the latest available
+    /// minirootfs on the selected mirror, and executes the extraction and
+    /// initial package setup via `apk`.
+    ///
+    /// # Returns
+    /// - `Ok(())` on successful environment initialization.
+    /// - `Err` if any stage (download, extraction, or execution) fails.
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut args: VecDeque<_> = self.remaining_args.clone().into();
+        let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
         let mut use_mirror: Option<String> = None;
         let (mut no_cache, mut reinstall, mut edge, mut minimal) = (false, false, false, false);
 
-        let sett = Settings::load_or_create();
+        let sett = Settings::load();
         let (mut cache_dir, mut rootfs_dir) = (sett.set_cache_dir(), sett.set_rootfs());
-        let def_rootfs: &str = &rootfs_dir.clone();
+        let def_rootfs = rootfs_dir.clone();
 
         while let Some(arg) = args.pop_front() {
-            match arg.as_str() {
-                "--no-cache" => {
-                    no_cache = true;
-                },
-                "-r" | "--reinstall" => {
-                    reinstall = true;
-                },
-                "--edge" => {
-                    edge = true;
-                },
-                "--minimal" => {
-                    minimal = true;
-                },
+            match arg {
+                "--edge" => edge = true,
+                "--no-cache" => no_cache = true,
+                "--minimal" => minimal = true,
+                "-r" | "--reinstall" => reinstall = true,
                 a if a.starts_with("--mirror=") => {
                     use_mirror = Some(parse_key_value!("setup", "url", arg)?);
                 }
                 "--mirror" => {
-                    use_mirror = Some(parse_key_value!("setup", "url", arg, Some(args.pop_front().unwrap_or_default()))?);
+                    use_mirror = Some(parse_key_value!("setup", "url", arg, args.pop_front())?);
                 }
                 a if a.starts_with("--cache=") => {
                     cache_dir = parse_key_value!("setup", "directory", arg)?;
                 }
                 "--cache" => {
-                    cache_dir = parse_key_value!("setup", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
+                    cache_dir = parse_key_value!("setup", "directory", arg, args.pop_front())?;
                 }
                 a if a.starts_with("--rootfs=") => {
                     rootfs_dir = parse_key_value!("setup", "directory", arg)?;
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("setup", "directory", arg, Some(args.pop_front().unwrap_or_default()))?;
+                    rootfs_dir = parse_key_value!("setup", "directory", arg, args.pop_front())?;
                 }
-                _ => {
-                    return Err(format!("{c}: setup: invalid argument '{arg}'\nUse '{c} --help' to see available options.", c = self.name).into())
-                }
+                _ => return invalid_arg!("setup", arg),
             }
         }
 
@@ -105,7 +109,7 @@ impl<'a> Setup<'a> {
             .body_mut()
             .read_to_string()?;
 
-        let document = Html::parse_document(res.as_str());
+        let document = Html::parse_document(&res);
         let selector = Selector::parse("a").unwrap();
 
         let pattern = format!(
@@ -127,49 +131,34 @@ impl<'a> Setup<'a> {
         }
 
         matches.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut dest_rootfs = rootfs_dir.clone();
 
         if let Some((_, version, link)) = matches.last() {
             println!("Latest version found: {version}");
             println!("Link: {url}{link}");
-            let dest_dir =
-                utils::download_file(&format!("{url}{link}"), &cache_dir, link)?;
-            dest_rootfs = self.extract_tar_gz(&format!("{dest_dir}/{link}"), &rootfs_dir)?;
+            let dest_dir = utils::download_file(&format!("{url}{link}"), &cache_dir, link)?;
+            let dest_rootfs = self.extract_tar_gz(&format!("{dest_dir}/{link}"), &rootfs_dir)?;
 
             if no_cache {
-                let path = Path::new(&cache_dir);
-                fs::remove_dir_all(path)?;
+                let _ = fs::remove_dir_all(&cache_dir);
             }
+
+            let new_content = mirror.get_repository();
+            let repo_path = concat_path!(&dest_rootfs, "etc/apk/repositories");
+            let mut file = File::create(&repo_path)?;
+            file.write_all(new_content.as_bytes())?;
+
+            let apk_command = if minimal {
+                "apk update".to_string()
+            } else {
+                format!("apk update && apk add {DEF_PACKAGES}")
+            };
+
+            Command::run(&dest_rootfs, None, Some(apk_command), true, true, false)?;
         } else {
             Err("No alpine-minirootfs files found")?;
         }
 
-        let new_content = mirror.get_repository();
-        let repo_path = Path::new(&dest_rootfs).join("etc/apk/repositories");
-        let mut file = File::create(&repo_path)?;
-        file.write_all(new_content.as_bytes())?;
-
-        Command::run(
-            dest_rootfs.clone(),
-            None,
-            Some("apk update".to_string()),
-            true,
-            true,
-            false,
-        )?;
-
-        if !minimal {
-            Command::run(
-                dest_rootfs,
-                None,
-                Some(format!("apk add {DEF_PACKAGES}")),
-                true,
-                true,
-                false,
-            )?;
-        }
-
-        finish_msg_setup(self.name);
+        finish_msg_setup();
         Ok(())
     }
 
@@ -196,7 +185,7 @@ impl<'a> Setup<'a> {
                 .progress_chars("##-"),
         );
 
-        let reader = bar.wrap_read(file);
+        let reader = bar.wrap_read(BufReader::with_capacity(64 * 1024, file));
         let decoder = GzDecoder::new(reader);
         let mut archive = Archive::new(decoder);
 
@@ -215,45 +204,42 @@ impl<'a> Setup<'a> {
     /// * `Some(VersionKey)` if the string is successfully parsed.
     /// * `None` if the string does not match the expected version pattern.
     fn parse_version_key(&self, link_contain_version: &str) -> Option<VersionKey> {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        let re = RE.get_or_init(|| {
-            Regex::new(r"^(\d+)\.(\d+)\.(\d+)(?:[_\-]?([a-zA-Z0-9]+))?$").unwrap()
-        });
-
+        let re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(?:[_\-]?([a-zA-Z0-9]+))?$").ok()?;
         let caps = re.captures(link_contain_version)?;
 
         Some(VersionKey {
-            major: caps[1].parse().ok()?,
-            minor: caps[2].parse().ok()?,
-            patch: caps[3].parse().ok()?,
-            suffix: caps.get(4).map(|m| m.as_str().to_string()).unwrap_or_default(),
+            major: caps.get(1)?.as_str().parse().ok()?,
+            minor: caps.get(2)?.as_str().parse().ok()?,
+            patch: caps.get(3)?.as_str().parse().ok()?,
+            suffix: caps
+                .get(4)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
         })
     }
 
-    /// Checks whether the given target directory exists and is valid.
+    /// Validates if the target directory can be used for rootfs installation.
     ///
     /// # Parameters
-    /// - `target`: Path to the directory to be checked.
+    /// - `target`: The requested installation path.
+    /// - `def_rootfs`: The fallback default rootfs path.
     ///
     /// # Returns
     /// - `Ok(())` if the directory exists.
     /// - `Err` with an error message if the directory does not exist or is not accessible.
     fn test_valid_directory(&self, target: &str, def_rootfs: &str) -> Result<(), Box<dyn Error>> {
-        let target_path = Path::new(target);
-
-        if target_path.is_dir() {
+        if fs::metadata(target).map(|m| m.is_dir()).unwrap_or(false) {
             return Err(format!(
-                "Rootfs directory {} is already available.\nUse [-r|--reinstall] to reinstall it.",
-                target
-            ).into());
+                "Rootfs directory {target} is already available.\nUse [-r|--reinstall] to reinstall it.",
+            )
+            .into());
         }
 
         let mut can_write = false;
-        if let Some(parent) = target_path.parent() {
-            if parent.exists() {
-                let test_path = parent.join(".permission_test");
-                if File::create(&test_path).is_ok() {
-                    let _ = fs::remove_file(&test_path);
+        if let Some(pos) = target.rfind('/') {
+            let parent = if pos == 0 { "/" } else { &target[..pos] };
+            if let Ok(meta) = fs::metadata(parent) {
+                if !meta.permissions().readonly() {
                     can_write = true;
                 }
             }
@@ -262,17 +248,17 @@ impl<'a> Setup<'a> {
         if !can_write {
             if !target.is_empty() {
                 eprintln!(
-                    "\x1b[1;33mWarning\x1b[0m: Write access denied for '{}'. Falling back to the default location...",
-                    target
+                    "\x1b[1;33mWarning\x1b[0m: Write access denied for '{target}'. Falling back to default...",
                 );
             }
 
-            if let Some(home) = Some(def_rootfs) {
-                if Path::new(home).is_dir() {
-                    return Err(format!(
-                        "Rootfs directory {home} is already available.\nUse [-r|--reinstall] to reinstall it.",
-                    ).into());
-                }
+            if fs::metadata(def_rootfs)
+                .map(|m| m.is_dir())
+                .unwrap_or(false)
+            {
+                return Err(format!(
+                    "Rootfs directory {def_rootfs} is already available.\nUse [-r|--reinstall] to reinstall it.",
+                ).into());
             }
         }
 
