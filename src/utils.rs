@@ -1,15 +1,38 @@
 use crate::settings::Settings;
+
 use indicatif::{ProgressBar, ProgressStyle};
 use std::error::Error;
 use std::fs::File;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::{env, fs, io};
 use walkdir_minimal::WalkDir;
 use which::which;
 
 pub const DOWNLOAD_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})";
 pub const SEPARATOR: &str = "════════════════════════════════════════════════════════════";
+pub static APP_NAME: OnceLock<String> = OnceLock::new();
+pub static SAFE_HOME: OnceLock<String> = OnceLock::new();
+
+pub fn get_safe_home() -> &'static str {
+    SAFE_HOME.get_or_init(|| env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+}
+
+/// Retrieves the current application name from the execution path.
+///
+/// # Returns
+/// A string slice containing the binary name or "ALPack" as fallback.
+pub fn get_app_name() -> &'static str {
+    APP_NAME.get_or_init(|| {
+        env::args()
+            .next()
+            .as_deref()
+            .and_then(|s| s.rsplit('/').next())
+            .unwrap_or("ALPack")
+            .to_string()
+    })
+}
 
 /// Determines the architecture string to use.
 ///
@@ -25,8 +48,8 @@ pub fn get_arch() -> String {
 ///
 /// # Arguments
 /// * `cmd` - The base command to be used in the suggestion (e.g., "ALPack").
-pub fn finish_msg_setup(cmd: &str) {
-    let b = get_cmd_box(&format!("$ {} run", cmd), Some(2), None).unwrap_or_default();
+pub fn finish_msg_setup() {
+    let b = get_cmd_box(&format!("$ {} run", SAFE_HOME.wait()), Some(2), None).unwrap_or_default();
 
     println!(
         "{s}\n  Installation completed successfully!\n\n  To start the environment, run:\n\n{b}\n{s}",
@@ -42,9 +65,9 @@ pub fn finish_msg_setup(cmd: &str) {
 /// # Returns
 /// * `Ok(())` if the directory exists.
 /// * `Err` with a descriptive message if the directory does not exist.
-pub fn check_rootfs_exists(cmd: &str, path: &str) -> Result<(), Box<dyn Error>> {
+pub fn check_rootfs_exists(path: &str) -> Result<(), Box<dyn Error>> {
     if !Path::new(path).is_dir() {
-        let b = get_cmd_box(&format!("$ {} setup", cmd), Some(2), None)?;
+        let b = get_cmd_box(&format!("$ {} setup", APP_NAME.wait()), Some(2), None)?;
 
         return Err(format!(
             "{s}\n  Error: rootfs directory not found.\n\n  Expected location:\n    -> {p}\n\n  Please run the following command to set it up:\n{b}\n{s}",
