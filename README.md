@@ -152,7 +152,12 @@ Therefore, they can be distributed and/or modified within the terms of the ***MI
 
 > ### See the [LICENSE](LICENSE) file for details.
 
-## 📬 Contact
+## 📬 Contact & Support
 
-Maintainer: Mauricio Ferrari (LinuxProativo)  
-E-Mail: *m10ferrari1200@gmail.com - contatolinuxdicaspro@gmail.com*
+* 📧 **Email:** [m10ferrari1200@gmail.com](mailto:m10ferrari1200@gmail.com)
+* 📧 **Email:** [contatolinuxdicaspro@gmail.com](mailto:contatolinuxdicaspro@gmail.com)
+* 🛠️ **Issues:** [Report a bug](https://github.com/LinuxProativo/ALPack/issues)
+
+<p align="center">
+  <i>Developed with precision in Rust. 🦀</i>
+</p>
