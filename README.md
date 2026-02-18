@@ -7,12 +7,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Linux-FCC624?&logo=linux&style=flat-square" alt="Platform Linux">
-    <a href="https://github.com/LinuxProativo/ALPack/actions/workflows/rust.yml">
+    <a href="https://github.com/LinuxProativo/ALPack/actions/workflows/rust.yml" style="text-decoration:none;">
         <img src="https://img.shields.io/github/actions/workflow/status/LinuxProativo/ALPack/rust.yml?label=Test&style=flat-square&logo=github" alt="Build Status">
     </a>
     <img src="https://img.shields.io/badge/Language-Rust_2024-orange?style=flat-square&logo=rust" alt="Rust Version">
     <img src="https://img.shields.io/badge/Build-Cargo-444444?style=flat-square&logo=rust" alt="Cargo Build">
-    <a href="https://github.com/LinuxProativo/ALPack/releases">
+    <a href="https://github.com/LinuxProativo/ALPack/releases"  style="text-decoration:none;">
         <img src="https://img.shields.io/github/v/release/LinuxProativo/ALPack?color=00599c&label=Release&style=flat-square" alt="Latest Release">
     </a>
     <img src="https://img.shields.io/github/last-commit/LinuxProativo/ALPack?color=00599c&label=Last%20Commit&style=flat-square" alt="Last Commit">
