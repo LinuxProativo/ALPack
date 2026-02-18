@@ -33,14 +33,20 @@ utility to a wide range of use cases beyond its core build focus.
 ## ✨ Features
 
 - 📦 Easily create and manage **portable Alpine rootfs**.
+
 - ⚡ Fast and minimal Alpine Linux environment setup;
+
 - 🧪 Safe sandboxing for testing or restricted systems;
-- 📆 Command execution inside containers;
-- 📁 Support for multiple rootfs directories and caches;
+
+- 📁 Support for multiple rootfs directories;
+
 - 💪 Ideal for compiling static binaries using musl and Alpine's minimal toolchain.
+
 - 🛠️ Work directly with **APKBUILDs**, simplifying the packaging process.
+
 - 💼 Run anywhere without complex installation, thanks to its fully **portable design**.
-- 🔒 Runs without root;
+
+- 🔒 Runs without real root;
 
 Lightweight, fast, and productivity-focused, ALPack bridges the gap between Alpine
 Linux flexibility and secure isolated environments.
@@ -139,6 +145,14 @@ tool across any environment without the need to install multiple dependencies;
 fully static binaries.
 
 
-## 📄 License
+## 📄 MIT License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This repository has scripts that were created to be free software.
+Therefore, they can be distributed and/or modified within the terms of the ***MIT License***.
+
+> ### See the [LICENSE](LICENSE) file for details.
+
+## 📬 Contact
+
+Maintainer: Mauricio Ferrari (LinuxProativo)  
+E-Mail: *m10ferrari1200@gmail.com - contatolinuxdicaspro@gmail.com*
