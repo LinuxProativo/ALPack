@@ -5,9 +5,8 @@
 //! package searching, and source retrieval via Git sparse-checkout,
 //! specifically tailored for Adélie's repository structure.
 
-use crate::settings::Settings;
-use crate::{collect_args, concat_path, git_utils, parse_key_value};
-use crate::{invalid_arg, missing_arg, utils};
+use crate::settings::{settings_output_dir, settings_rootfs_dir};
+use crate::{collect_args, invalid_arg, missing_arg, parse_key_value, utils};
 
 use std::collections::VecDeque;
 use std::error::Error;
@@ -45,26 +44,20 @@ impl Aptree {
             return missing_arg!("aptree");
         }
 
-        let sett = Settings::load();
-        let mut rootfs_dir = sett.set_rootfs();
+        let mut rootfs_dir = settings_rootfs_dir();
+        let mut output_dir = settings_output_dir();
         let (mut search_pkg, mut get_pkg) = (Vec::new(), Vec::new());
-
-        let mut output = if !sett.output_dir.is_empty() {
-            sett.output_dir
-        } else {
-            Settings::set_output_dir()?
-        };
-
         let (mut update, mut search, mut get, mut bk) = (false, false, false, false);
 
         while let Some(arg) = args.pop_front() {
             match arg {
                 "-u" | "--update" => (update, bk) = (true, true),
                 a if a.starts_with("--output=") => {
-                    output = parse_key_value!("aptree", "directory", arg)?;
+                    output_dir = parse_key_value!("aptree", "directory", arg)?.into();
                 }
                 "-o" | "--output" => {
-                    output = parse_key_value!("aptree", "directory", arg, args.pop_front())?;
+                    output_dir =
+                        parse_key_value!("aptree", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--search=") => {
                     (search, bk) = (true, true);
@@ -97,10 +90,11 @@ impl Aptree {
                     collect_args!(args, get_pkg);
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("aptree", "directory", arg)?;
+                    rootfs_dir = parse_key_value!("aptree", "directory", arg)?.into();
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("aptree", "directory", arg, args.pop_front())?;
+                    rootfs_dir =
+                        parse_key_value!("aptree", "directory", arg, args.pop_front())?.into();
                 }
                 other => return invalid_arg!("aptree", other),
             }
@@ -111,8 +105,8 @@ impl Aptree {
         }
 
         if update {
-            git_utils::setup_repository(
-                &rootfs_dir,
+            utils::update_git_repository(
+                rootfs_dir.clone(),
                 "https://git.adelielinux.org/adelie/packages.git",
                 "aptree",
                 &["bootstrap", "experimental", "legacy", "system", "user"],
@@ -123,19 +117,21 @@ impl Aptree {
             }
         }
 
-        utils::check_rootfs_exists(&rootfs_dir)?;
-        let content = fs::read_to_string(concat_path!(rootfs_dir, "build", "aptree-database"))?;
+        utils::check_rootfs_exists(rootfs_dir.clone())?;
+        let content: String =
+            fs::read_to_string(rootfs_dir.join("build/aptree-database")).unwrap_or_default();
 
         if search {
-            git_utils::print_result(&search_pkg, &content)?;
-
+            utils::print_result(&search_pkg, &content)?;
             if !get {
                 return Ok(());
             }
         }
 
         if get {
-            git_utils::fetch_package_files(&rootfs_dir, "aptree", &get_pkg, &content, &output)?;
+            utils::download_git_sources_files(
+                rootfs_dir, "aptree", &get_pkg, &content, output_dir,
+            )?;
         }
         Ok(())
     }

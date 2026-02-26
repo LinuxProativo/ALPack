@@ -4,11 +4,13 @@
 //! Alpine `apk` manager. It handles command aliasing (e.g., 'install' to 'add')
 //! and ensures commands are executed within the correct rootfs context.
 
-use crate::command::Command;
 use crate::missing_arg;
-use crate::settings::Settings;
+use crate::settings::settings_rootfs_dir;
+use crate::utils::map_result;
 
+use sandbox_utils::{SandBox, SandBoxConfig};
 use std::error::Error;
+use std::path::PathBuf;
 
 /// Controller for interacting with the Alpine Package Manager.
 pub struct Apk {
@@ -17,7 +19,7 @@ pub struct Apk {
     /// Additional arguments passed to the apk command.
     remaining_args: Vec<String>,
     /// Optional rootfs directory override.
-    rootfs: Option<String>,
+    rootfs: Option<PathBuf>,
 }
 
 impl Apk {
@@ -25,7 +27,7 @@ impl Apk {
     pub fn new(
         command: Option<String>,
         remaining_args: Vec<String>,
-        rootfs: Option<String>,
+        rootfs: Option<PathBuf>,
     ) -> Self {
         Apk {
             command,
@@ -64,18 +66,26 @@ impl Apk {
     /// - `Ok(())` on success.
     /// - `Err(Box<dyn Error>)` if execution fails.
     fn run_apk(&self, cmd: &str) -> Result<(), Box<dyn Error>> {
-        let rootfs = match self.rootfs.as_deref().filter(|s| !s.is_empty()) {
-            Some(r) => r.to_string(),
-            None => Settings::load().set_rootfs(),
+        let rootfs = match &self.rootfs {
+            Some(path) => path.clone(),
+            None => settings_rootfs_dir(),
         };
 
-        let full_cmd = if self.remaining_args.is_empty() {
+        let run_cmd = if self.remaining_args.is_empty() {
             cmd.to_string()
         } else {
             format!("{} {}", cmd, self.remaining_args.join(" "))
         };
 
-        Command::run(&rootfs, None, Some(full_cmd), true, true, false)?;
+        let config = SandBoxConfig {
+            rootfs,
+            run_cmd,
+            use_root: true,
+            ignore_extra_bind: true,
+            ..Default::default()
+        };
+
+        map_result(SandBox::run(config))?;
         Ok(())
     }
 }
