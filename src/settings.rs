@@ -3,20 +3,15 @@
 //! Handles loading, saving, and displaying configuration using a thread-safe
 //! global path and safe home directory fallbacks.
 
-use crate::concat_path;
-use crate::utils::SAFE_HOME;
+use sandbox_utils::{
+    config_file, default_cache, default_rootfs, get_config_diff, render_table, safe_home, USE_PROOT,
+};
 
 use serde::{Deserialize, Serialize};
-use std::string::ToString;
-use std::sync::LazyLock;
-use std::{env, fs, io};
-
-/// Absolute path to the configuration directory.
-static CONFIG_DIR: LazyLock<String> =
-    LazyLock::new(|| concat_path!(SAFE_HOME.wait(), ".config/ALPack"));
-
-/// Absolute path to the config.toml file.
-static CONFIG_FILE: LazyLock<String> = LazyLock::new(|| concat_path!(&*CONFIG_DIR, "config.toml"));
+use std::error::Error;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+use std::{env, fs};
 
 /// Application configuration settings.
 #[derive(Serialize, Deserialize, Debug)]
@@ -24,33 +19,45 @@ pub struct Settings {
     /// The default Alpine Linux mirror URL.
     pub default_mirror: String,
     /// Directory used for caching downloaded files.
-    pub cache_dir: String,
+    pub cache_dir: PathBuf,
     /// Directory where the rootfs will be extracted/managed.
-    pub rootfs_dir: String,
+    pub rootfs_dir: PathBuf,
     /// The command used to run the rootfs (e.g., proot, chroot).
     pub cmd_rootfs: String,
     /// The target Alpine release version.
     pub release: String,
     /// Default output directory for build artifacts.
-    pub output_dir: String,
+    pub output_dir: PathBuf,
 }
+
+/// Global thread-safe storage for application settings.
+static SETTINGS: OnceLock<Settings> = OnceLock::new();
 
 impl Default for Settings {
     /// Provides default settings based on the safe home directory.
     fn default() -> Self {
-        let home = SAFE_HOME.wait();
         Self {
             default_mirror: "https://dl-cdn.alpinelinux.org/alpine/".to_string(),
-            cache_dir: concat_path!(home, ".cache/ALPack"),
-            rootfs_dir: concat_path!(home, ".ALPack"),
-            cmd_rootfs: "proot".to_string(),
+            cache_dir: default_cache(),
+            rootfs_dir: default_rootfs(),
+            cmd_rootfs: USE_PROOT.to_string(),
             release: "latest-stable".to_string(),
-            output_dir: String::new(),
+            output_dir: PathBuf::new(),
         }
     }
 }
 
 impl Settings {
+    /// Provides global access to the loaded settings.
+    ///
+    /// If the settings haven't been loaded yet, it initializes them from the disk.
+    ///
+    /// # Returns
+    /// A reference to the global `Settings` instance.
+    pub fn global() -> &'static Settings {
+        SETTINGS.get_or_init(Self::load)
+    }
+
     /// Loads the configuration from the config file, or creates a default one.
     ///
     /// This method will attempt to read the TOML file from disk. If the file
@@ -59,17 +66,11 @@ impl Settings {
     /// # Returns
     /// - A `Settings` struct populated from disk or defaults.
     pub fn load() -> Self {
-        let path = &*CONFIG_FILE;
+        let path = config_file();
 
         match fs::read_to_string(path) {
-            Ok(content) if content.is_empty() => {
-                eprintln!("\x1b[1;33mWarning\x1b[0m: Config file is empty. Using defaults.");
-                Self::create()
-            }
-            Ok(content) => toml::from_str(&content).unwrap_or_else(|_| {
-                eprintln!("\x1b[1;33mWarning\x1b[0m: Failed to parse config. Using defaults.");
-                Self::create()
-            }),
+            Ok(content) if content.is_empty() => Self::create(),
+            Ok(content) => toml::from_str(&content).unwrap_or_else(|_| Self::create()),
             Err(_) => Self::create(),
         }
     }
@@ -83,15 +84,8 @@ impl Settings {
     /// - A `Settings` struct containing default values.
     fn create() -> Self {
         let default = Settings::default();
-        let _ = fs::create_dir_all(&*CONFIG_DIR);
-
-        if let Err(e) = fs::write(
-            &*CONFIG_FILE,
-            toml::to_string_pretty(&default).unwrap_or_default(),
-        ) {
-            eprintln!("\x1b[1;33mWarning\x1b[0m: Failed to write default config file: {e}");
-        }
-
+        let path = config_file();
+        let _ = fs::write(&path, toml::to_string_pretty(&default).unwrap_or_default());
         default
     }
 
@@ -100,132 +94,101 @@ impl Settings {
     /// # Returns
     /// - `Ok(())` if the file was successfully written.
     /// - `Err` if serialization or the write operation fails.
-    pub fn save(&self) -> io::Result<()> {
-        let _ = fs::create_dir_all(&*CONFIG_DIR);
-
-        let toml_data = toml::to_string_pretty(self)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        fs::write(&*CONFIG_FILE, toml_data)
+    pub fn save(&self) -> Result<(), Box<dyn Error>> {
+        let toml_data = toml::to_string_pretty(self)?;
+        fs::write(config_file(), toml_data)?;
+        Ok(())
     }
 
     /// Displays the current configuration from the disk and compares it with in-memory settings.
     ///
     /// Fields that differ will be highlighted using ANSI color codes to show
     /// the transition from the old value to the new value.
-    #[allow(unused_variables, unused_mut)]
     pub fn show_config_changes(&self) {
-        let disk_config = fs::read_to_string(&*CONFIG_FILE)
+        let disk_config = fs::read_to_string(config_file())
             .ok()
             .and_then(|s| toml::from_str::<Settings>(&s).ok());
-        let mut rows: Vec<(String, String)> = Vec::new();
 
-        macro_rules! show_field {
-            ($field:ident) => {
-                let name = stringify!($field).to_string();
-                let mut new_v = self.$field.clone();
+        let rows = match disk_config {
+            Some(old) => get_config_diff(&old, self),
+            None => get_config_diff(self, self),
+        };
 
-                if name == "output_dir" && new_v.is_empty() {
-                    new_v = "Current Directory or Home Fallback".to_string();
-                }
-
-                let value_str = if let Some(old) = &disk_config {
-                    let mut old_v = old.$field.clone();
-                    if name == "output_dir" && old_v.is_empty() {
-                        old_v = "Current Directory or Home Fallback".to_string();
-                    }
-
-                    if old_v != new_v {
-                        format!("\x1b[1;31m{old_v}\x1b[0m -> \x1b[1;32m{new_v}\x1b[0m")
-                    } else {
-                        new_v
-                    }
-                } else {
-                    new_v
-                };
-                rows.push((name, value_str));
-            };
-        }
-
-        show_field!(default_mirror);
-        show_field!(cache_dir);
-        show_field!(rootfs_dir);
-        show_field!(cmd_rootfs);
-        show_field!(release);
-        show_field!(output_dir);
-
-        self.render_table(rows);
+        render_table(rows);
     }
+}
 
-    /// Renders a formatted table for configuration display.
-    ///
-    /// This method calculates the necessary column widths and draws a terminal-based
-    /// table using Unicode box-drawing characters. It specifically handles ANSI
-    /// escape sequences (used for coloring) by compensating for their invisible
-    /// length to maintain border alignment.
-    ///
-    /// # Parameters
-    /// - `rows`: A vector of tuples containing the field name and its formatted value.
-    fn render_table(&self, rows: Vec<(String, String)>) {
-        let key_width = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
-        let val_width = rows
-            .iter()
-            .map(|(_, v)| {
-                if v.contains("->") {
-                    v.len().saturating_sub(22)
-                } else {
-                    v.len()
-                }
-            })
-            .max()
-            .unwrap_or(0);
+/// Returns the default Alpine Linux mirror URL.
+///
+/// This value is retrieved from the global settings initialized from the configuration file.
+///
+/// # Returns
+/// A `String` containing the mirror URL (e.g., "https://dl-cdn.alpinelinux.org/alpine/").
+pub fn settings_mirror() -> String {
+    SETTINGS.wait().default_mirror.clone()
+}
 
-        println!(
-            "╔═{}═══╦═{}═══╗",
-            "═".repeat(key_width),
-            "═".repeat(val_width)
-        );
-        for (k, v) in rows {
-            let padding = if v.contains("->") {
-                val_width + 22
-            } else {
-                val_width
-            };
-            println!("║ {:<key_width$}   ║ {:<padding$}   ║", k, v);
-        }
-        println!(
-            "╚═{}═══╩═{}═══╝",
-            "═".repeat(key_width),
-            "═".repeat(val_width)
-        );
-    }
+/// Returns the active root filesystem directory.
+///
+/// Resolution priority:
+/// 1. `ALPACK_ROOTFS` environment variable.
+/// 2. `rootfs_dir` value from the configuration file.
+///
+/// # Returns
+/// A `PathBuf` pointing to the directory where the rootfs is managed.
+pub fn settings_rootfs_dir() -> PathBuf {
+    env::var("ALPACK_ROOTFS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| SETTINGS.wait().rootfs_dir.clone())
+}
 
-    /// Determines the output directory for the application.
-    ///
-    /// # Returns
-    /// - `Ok(String)` containing the path, or a home fallback on permission error.
-    pub fn set_output_dir() -> io::Result<String> {
-        let current = env::current_dir()?.display().to_string();
+/// Returns the active cache directory for downloads.
+///
+/// Resolution priority:
+/// 1. `ALPACK_CACHE` environment variable.
+/// 2. `cache_dir` value from the configuration file.
+///
+/// # Returns
+/// A `PathBuf` pointing to the location used for storing cached files.
+pub fn settings_cache_dir() -> PathBuf {
+    env::var("ALPACK_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| SETTINGS.wait().cache_dir.clone())
+}
 
-        if fs::read_dir(&current).is_ok() {
-            Ok(current)
-        } else {
-            Ok(SAFE_HOME.wait().to_string())
-        }
-    }
+/// Returns the command used to execute the sandbox.
+///
+/// Common values include `"proot"` or `"bwrap"`.
+///
+/// # Returns
+/// A `String` representing the binary name or command configured for the rootfs.
+pub fn settings_cmd() -> String {
+    SETTINGS.wait().cmd_rootfs.clone()
+}
 
-    /// Determines the root filesystem directory for the application.
-    ///
-    /// # Returns
-    /// - `String` containing the path, prioritized by environment variables.
-    pub fn set_rootfs(&self) -> String {
-        env::var("ALPACK_ROOTFS").unwrap_or_else(|_| self.rootfs_dir.clone())
-    }
+/// Returns the target Alpine Linux release version.
+///
+/// Usually defaults to `"latest-stable"` or a specific version like `"v3.18"`.
+///
+/// # Returns
+/// A `String` containing the release identifier.
+pub fn settings_release() -> String {
+    SETTINGS.wait().release.clone()
+}
 
-    /// Determines the cache directory for the application.
-    ///
-    /// # Returns
-    /// - `String` containing the path, prioritized by environment variables.
-    pub fn set_cache_dir(&self) -> String {
-        env::var("ALPACK_CACHE").unwrap_or_else(|_| self.cache_dir.clone())
+/// Returns the output directory for build artifacts with fallback logic.
+///
+/// If no output directory is explicitly set in the configuration, it attempts to
+/// return the current working directory, falling back to the user's safe home
+/// directory if the current directory is inaccessible.
+///
+/// # Returns
+/// A `PathBuf` representing the destination for generated files.
+pub fn settings_output_dir() -> PathBuf {
+    let out = &SETTINGS.wait().output_dir;
+    if out.as_os_str().is_empty() {
+        env::current_dir().unwrap_or_else(|_| safe_home())
+    } else {
+        out.clone()
     }
 }
