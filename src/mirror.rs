@@ -4,9 +4,9 @@
 //! It combines mirrors, release branches, and system architecture to generate
 //! valid paths for rootfs tarballs and APK repositories.
 
-use crate::settings::Settings;
-use crate::utils;
+use crate::settings::{settings_mirror, settings_release};
 
+use sandbox_utils::app_arch;
 use std::error::Error;
 
 /// Manager for Alpine Linux mirror and release metadata.
@@ -28,13 +28,11 @@ impl Mirror {
     /// # Returns
     /// * `Ok(())` - Always returns success after ensuring values are present.
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let sett = Settings::load();
-
         if self.mirror.as_deref().unwrap_or("").is_empty() {
-            self.mirror = Some(sett.default_mirror);
+            self.mirror = Some(settings_mirror());
         }
         if self.release.as_deref().unwrap_or("").is_empty() {
-            self.release = Some(sett.release);
+            self.release = Some(settings_release());
         }
         Ok(())
     }
@@ -48,7 +46,7 @@ impl Mirror {
             "{}{}/releases/{}/",
             self.mirror.as_deref().unwrap_or(""),
             self.release.as_deref().unwrap_or(""),
-            utils::get_arch()
+            app_arch()
         )
     }
 
