@@ -42,25 +42,25 @@ impl Config {
                 "--use-latest-stable" => sett.release = "latest-stable".to_string(),
                 "--use-edge" => sett.release = "edge".to_string(),
                 a if a.starts_with("--cache-dir=") => {
-                    sett.cache_dir = parse_key_value!("config", "directory", arg)?;
+                    sett.cache_dir = parse_key_value!("config", "directory", arg)?.into();
                 }
                 "--cache-dir" => {
                     sett.cache_dir =
-                        parse_key_value!("config", "directory", arg, args.pop_front())?;
+                        parse_key_value!("config", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--rootfs-dir=") => {
-                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?;
+                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?.into();
                 }
                 "--rootfs-dir" => {
                     sett.rootfs_dir =
-                        parse_key_value!("config", "directory", arg, args.pop_front())?;
+                        parse_key_value!("config", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--output-dir=") => {
-                    sett.output_dir = parse_key_value!("config", "directory", arg)?;
+                    sett.output_dir = parse_key_value!("config", "directory", arg)?.into();
                 }
                 "--output-dir" => {
                     sett.output_dir =
-                        parse_key_value!("config", "directory", arg, args.pop_front())?;
+                        parse_key_value!("config", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--default-mirror=") => {
                     sett.default_mirror = parse_key_value!("config", "mirror", arg)?;

@@ -1,20 +1,17 @@
 [package]
 name = "ALPack"
-version = "4.0.0"
+version = "5.0.0"
 edition = "2024"
 
 [dependencies]
-pico-args = { version = "0.5" }
-ureq = { version = "3.2", features = ["charset"] }
-scraper = { version = "0.25" }
-regex = { version = "1.12" }
-indicatif = { version = "0.18" }
-flate2 = { version = "1.1" }
-tar = { version = "0.4" }
+sandbox_utils = { git = "https://github.com/LinuxProativo/sandbox_utils", default-features = false, features = ["gz"] }
 serde = { version = "1.0", features = ["derive"] }
-toml = {  version = "0.9" }
-walkdir_minimal = { version = "1.0" }
-which = { version = "8.0" }
+ureq = { version = "3.2", features = ["charset"] }
+pico-args = "0.5"
+scraper = "0.25"
+regex = "1.12"
+toml = "1.0"
+walkdir_minimal = "1.0"
 
 [profile.release]
 opt-level = "z"
