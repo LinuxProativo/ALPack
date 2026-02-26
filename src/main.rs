@@ -8,9 +8,7 @@ mod apk;
 mod aports;
 mod aptree;
 mod builder;
-mod command;
 mod config;
-mod git_utils;
 mod macros;
 mod mirror;
 mod run;
@@ -24,18 +22,20 @@ use crate::aptree::Aptree;
 use crate::builder::Builder;
 use crate::config::Config;
 use crate::run::Run;
+use crate::settings::{settings_cmd, Settings};
 use crate::setup::Setup;
-use crate::utils::get_app_name;
 
 use pico_args::Arguments;
+use sandbox_utils::{app_name, sandbox_init, set_sandbox_tool};
 use std::env;
 use std::error::Error;
+use std::path::PathBuf;
 
 /// Prints the help message and usage instructions to the console.
 ///
 /// # Parameters
 /// - `cmd`: The binary name used to invoke the program.
-fn print_help(cmd: &str) -> Result<(), Box<dyn Error>> {
+fn print_help(cmd: String) -> Result<(), Box<dyn Error>> {
     println!(
         "{cmd} - Alpine Linux RootFS Packaging Tool
 
@@ -148,8 +148,9 @@ Examples:
 /// - `Ok(())` if the command executes successfully.
 /// - `Err` if argument parsing fails or a submodule returns an error.
 fn alpack() -> Result<(), Box<dyn Error>> {
-    utils::get_safe_home();
-    let cmd = get_app_name();
+    sandbox_init("ALPack", "ALPACK_ARCH")?;
+    Settings::global();
+    set_sandbox_tool(&settings_cmd())?;
 
     let mut pargs = Arguments::from_env();
     let command: Option<String> = pargs.opt_free_from_str().ok().flatten();
@@ -174,9 +175,9 @@ fn alpack() -> Result<(), Box<dyn Error>> {
 
             while let Some(arg) = args.next() {
                 match arg.as_str() {
-                    "-R" | "--rootfs" => rootfs = args.next(),
+                    "-R" | "--rootfs" => rootfs = args.next().map(PathBuf::from),
                     a if a.starts_with("--rootfs=") => {
-                        rootfs = a.split_once('=').map(|(_, v)| v.to_string());
+                        rootfs = a.split_once('=').map(|(_, v)| PathBuf::from(v));
                     }
                     _ if subcommand.is_none() => subcommand = Some(arg),
                     _ => subargs.push(arg),
@@ -198,7 +199,7 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         Some("run") => Run::new(remaining_args).run(),
         Some("setup") => Setup::new(remaining_args).run(),
 
-        Some("-h") | Some("--help") => print_help(&cmd),
+        Some("-h") | Some("--help") => print_help(app_name()),
         Some("-V") | Some("--version") => Ok(println!("{}", env!("CARGO_PKG_VERSION"))),
 
         Some(other) => invalid_arg!(other),
