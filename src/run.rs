@@ -4,10 +4,11 @@
 //! override the rootfs path, inject custom bind mounts, and define the
 //! command to be executed within the sandbox.
 
-use crate::command::Command;
-use crate::settings::Settings;
+use crate::settings::settings_rootfs_dir;
+use crate::utils::map_result;
 use crate::{invalid_arg, parse_key_value};
 
+use sandbox_utils::{SandBox, SandBoxConfig};
 use std::collections::VecDeque;
 use std::error::Error;
 
@@ -32,29 +33,23 @@ impl Run {
     /// * `Ok(())` - If the command was executed successfully.
     /// * `Err` - If an invalid argument is found or the execution fails.
     pub fn run(&self) -> Result<(), Box<dyn Error>> {
-        let sett = Settings::load();
-        let mut rootfs_dir = sett.set_rootfs();
+        let mut rootfs = settings_rootfs_dir();
         let mut args: VecDeque<&str> = self.remaining_args.iter().map(|s| s.as_str()).collect();
 
         let mut cmd_args = Vec::new();
-        let mut bind_args: Option<String> = None;
-        let (mut use_root, mut ignore_extra_bind, mut no_groups) = (false, false, false);
+        let mut args_bind = String::new();
+        let (mut use_root, mut ignore_extra_bind, mut no_group) = (false, false, false);
 
         while let Some(arg) = args.pop_front() {
             match arg {
                 "-0" | "--root" => use_root = true,
                 "-i" | "--ignore-extra-binds" => ignore_extra_bind = true,
-                "-n" | "--no-groups" => no_groups = true,
+                "-n" | "--no-groups" => no_group = true,
                 a if a.starts_with("--bind-args=") => {
-                    bind_args = Some(parse_key_value!("run", "parameters", arg)?);
+                    args_bind = parse_key_value!("run", "parameters", arg)?;
                 }
                 "-b" | "--bind-args" => {
-                    bind_args = Some(parse_key_value!(
-                        "run",
-                        "parameters",
-                        arg,
-                        args.pop_front()
-                    )?);
+                    args_bind = parse_key_value!("run", "parameters", arg, args.pop_front())?;
                 }
                 a if a.starts_with("--command=") => {
                     cmd_args.push(parse_key_value!("run", "command", arg)?);
@@ -63,10 +58,10 @@ impl Run {
                     cmd_args.push(parse_key_value!("run", "command", arg, args.pop_front())?);
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("run", "directory", arg)?;
+                    rootfs = parse_key_value!("run", "directory", arg)?.into();
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("run", "directory", arg, args.pop_front())?;
+                    rootfs = parse_key_value!("run", "directory", arg, args.pop_front())?.into();
                 }
                 "--" => {
                     cmd_args.extend(args.drain(..).map(|s| s.to_string()));
@@ -81,16 +76,23 @@ impl Run {
             }
         }
 
-        let final_cmd = (!cmd_args.is_empty()).then(|| cmd_args.join(" "));
+        let run_cmd = if cmd_args.is_empty() {
+            String::new()
+        } else {
+            cmd_args.join(" ")
+        };
 
-        Command::run(
-            &rootfs_dir,
-            bind_args,
-            final_cmd,
+        let config = SandBoxConfig {
+            rootfs,
+            run_cmd,
+            args_bind,
             use_root,
             ignore_extra_bind,
-            no_groups,
-        )?;
+            no_group,
+            ..Default::default()
+        };
+
+        map_result(SandBox::run(config))?;
         Ok(())
     }
 }
