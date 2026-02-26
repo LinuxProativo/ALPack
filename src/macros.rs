@@ -11,7 +11,7 @@
 #[macro_export]
 macro_rules! invalid_arg {
     ($sub:expr, $other:expr) => {{
-        let c = crate::utils::APP_NAME.wait();
+        let c = sandbox_utils::app_name();
         let context = if $sub.is_empty() {
             c.to_string()
         } else {
@@ -40,7 +40,7 @@ macro_rules! missing_arg {
     ($sub:expr, essential) => {{
         let err = format!(
             "{c}: {s}: no essential parameter specified\nUse '{c} --help' to see available options.",
-            c = crate::utils::APP_NAME.wait(), s = $sub
+            c = sandbox_utils::app_name(), s = $sub
         );
         Err(err.into())
     }};
@@ -48,25 +48,9 @@ macro_rules! missing_arg {
     ($sub:expr) => {{
         let err = format!(
             "{c}: {s}: no parameter specified\nUse '{c} --help' to see available options.",
-            c = crate::utils::APP_NAME.wait(), s = $sub
+            c = sandbox_utils::app_name(), s = $sub
         );
         Err(err.into())
-    }};
-}
-
-/// Efficiently joins multiple string segments into a single path.
-///
-/// It trims trailing slashes from the base and leading/trailing slashes
-/// from segments to ensure a clean, single-slash delimited path string.
-#[macro_export]
-macro_rules! concat_path {
-    ($base:expr, $($segment:expr),+) => {{
-        let mut path = $base.trim_end_matches('/').to_string();
-        $(
-            path.push_str("/");
-            path.push_str($segment.trim_matches('/'));
-        )+
-        path
     }};
 }
 
@@ -159,27 +143,5 @@ macro_rules! parse_key_value {
 
     ($sub:expr, $val_name:expr, $arg:expr) => {
         $crate::parse_key_value!($sub, $val_name, $arg, Option::<&str>::None)
-    };
-}
-
-/// Facilitates the addition of filesystem binds to a Bubblewrap option string.
-///
-/// Bubblewrap requires a source and a destination for each bind (e.g., `--ro-bind /src /src`).
-/// This macro automates the repetition of the path and ensures proper spacing between
-/// arguments to prevent command-line parsing errors.
-///
-/// # Arguments
-/// * `$options` - The target `String` (usually `bwrap_options`).
-/// * `$type` - The bind flag (e.g., "--bind", "--ro-bind", "--bind-try").
-/// * `$path` - The path to be bound (used for both source and destination).
-#[macro_export]
-macro_rules! push_bind {
-    ($options:expr, $type:expr, $path:expr) => {
-        $options.push_str(" ");
-        $options.push_str($type);
-        $options.push_str(" ");
-        $options.push_str($path);
-        $options.push_str(" ");
-        $options.push_str($path);
     };
 }
