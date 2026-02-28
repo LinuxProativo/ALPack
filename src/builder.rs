@@ -5,15 +5,18 @@
 //! It supports building from directories (contextual builds) or
 //! standalone APKBUILD files.
 
-use crate::command::Command;
-use crate::settings::Settings;
+use crate::settings::settings_rootfs_dir;
 use crate::setup::DEF_PACKAGES;
-use crate::{concat_path, invalid_arg, missing_arg, parse_key_value, utils};
+use crate::utils::map_result;
+use crate::{invalid_arg, missing_arg, parse_value};
 
+use recursive_copy::{copy_recursive, CopyOptions};
+use sandbox_utils::{app_arch, SandBox, SandBoxConfig};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 /// Controller for automated Alpine Linux package compilation.
@@ -48,26 +51,26 @@ impl Builder {
         }
 
         let mut build_targets = Vec::new();
-        let sett = Settings::load();
-        let mut rootfs_dir = sett.set_rootfs();
+        let mut rootfs_dir = settings_rootfs_dir();
         let mut force_key = false;
 
         while let Some(arg) = args.pop_front() {
             match arg {
                 "--force-key" => force_key = true,
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("builder", "directory", arg)?;
+                    rootfs_dir = parse_value!("builder", "directory", arg)?.into();
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir = parse_key_value!("builder", "directory", arg, args.pop_front())?;
+                    rootfs_dir =
+                        parse_value!("builder", "directory", arg, args.pop_front())?.into();
                 }
                 "-a" | "--apkbuild" | "--apkbuild=" => {
                     let arg_ref = arg;
 
                     if arg_ref.contains('=') {
-                        build_targets.push(parse_key_value!("builder", "apkbuild", arg)?);
+                        build_targets.push(parse_value!("builder", "apkbuild", arg)?);
                     } else {
-                        let first = parse_key_value!("builder", "apkbuild", arg, args.pop_front())?;
+                        let first = parse_value!("builder", "apkbuild", arg, args.pop_front())?;
                         build_targets.push(first);
                     }
 
@@ -79,47 +82,44 @@ impl Builder {
         }
 
         for p in build_targets {
-            let potential_path = concat_path!(&p, "APKBUILD");
-            let pkg_name: String;
-            let is_single_file: bool;
-            let folder_name: &str;
+            let path = Path::new(&p);
+            let potential_apkbuild = path.join("APKBUILD");
 
-            if File::open(&potential_path).is_ok() {
-                pkg_name = Self::get_pkgname(&potential_path);
-                folder_name = p
-                    .trim_end_matches('/')
-                    .split('/')
-                    .last()
-                    .unwrap_or("unknown");
-                is_single_file = false;
-            } else if p.ends_with("APKBUILD") && File::open(&p).is_ok() {
-                pkg_name = Self::get_pkgname(&p);
-                folder_name = &pkg_name;
-                is_single_file = true;
-            } else {
-                eprintln!(
-                    "\x1b[1;33mWarning\x1b[0m: Target {} is not a valid APKBUILD or directory",
-                    p
-                );
-                continue;
-            }
+            let (pkg_name, folder_name, is_single_file, source_path) =
+                if potential_apkbuild.exists() {
+                    let name = Self::get_pkgname(&potential_apkbuild);
+                    let folder = path
+                        .file_name()
+                        .and_then(|f| f.to_str())
+                        .unwrap_or("unknown");
+                    (name, folder.to_string(), false, path)
+                } else if path.is_file() && p.ends_with("APKBUILD") {
+                    let name = Self::get_pkgname(path);
+                    (name.clone(), name, true, path)
+                } else {
+                    eprintln!(
+                        "\x1b[1;33mWarning\x1b[0m: Target {} is not a valid APKBUILD or directory",
+                        p
+                    );
+                    continue;
+                };
 
             if pkg_name.is_empty() {
                 eprintln!("\x1b[1;31mError\x1b[0m: pkgname not found in target {}", p);
                 continue;
             }
 
-            let build_path = concat_path!(rootfs_dir, "build");
+            let build_path = rootfs_dir.join("build");
+            let target_dir = build_path.join(&folder_name);
 
             if is_single_file {
-                let dest_file = concat_path!(&build_path, folder_name);
-                fs::create_dir_all(&dest_file)?;
-                fs::copy(&p, concat_path!(&dest_file, "APKBUILD"))?;
+                fs::create_dir_all(&target_dir)?;
+                fs::copy(source_path, target_dir.join("APKBUILD"))?;
             } else {
-                utils::copy_dir_recursive(p.as_ref(), build_path.as_ref())?;
+                copy_recursive(source_path, &target_dir, &CopyOptions::default())?;
             }
 
-            Self::run_abuild(&rootfs_dir, folder_name, &pkg_name, force_key)?;
+            Self::run_abuild(rootfs_dir.clone(), &folder_name, &pkg_name, force_key)?;
         }
 
         Ok(())
@@ -132,22 +132,21 @@ impl Builder {
     ///
     /// # Returns
     /// * `String` - The package name found in the file.
-    fn get_pkgname(path: &str) -> String {
+    fn get_pkgname<P: AsRef<Path>>(path: P) -> String {
         File::open(path)
             .ok()
             .and_then(|file| {
-                let reader = BufReader::new(file);
-                for line in reader.lines().filter_map(Result::ok) {
-                    if line.starts_with("pkgname=") {
-                        let name = line
-                            .trim_start_matches("pkgname=")
-                            .trim()
-                            .trim_matches('"')
-                            .trim_matches('\'');
-                        return Some(name.to_string());
-                    }
-                }
-                None
+                BufReader::new(file)
+                    .lines()
+                    .filter_map(Result::ok)
+                    .find(|line| line.starts_with("pkgname="))
+                    .map(|line| {
+                        line.split('=')
+                            .nth(1)
+                            .unwrap_or_default()
+                            .trim_matches(|c| c == '"' || c == '\'' || c == ' ')
+                            .to_string()
+                    })
             })
             .unwrap_or_default()
     }
@@ -167,13 +166,13 @@ impl Builder {
     /// * `Ok(())` - If the `abuild` command executes successfully.
     /// * `Err` - If there is any error during execution, return a boxed `dyn Error`.
     fn run_abuild(
-        rootfs: &str,
+        rootfs: PathBuf,
         dir_name: &str,
         pkg: &str,
         force_key: bool,
     ) -> Result<(), Box<dyn Error>> {
         let user = env::var("USER").unwrap_or_else(|_| "root".into());
-        let keys_dir = concat_path!(rootfs, "etc/apk/keys");
+        let keys_dir = rootfs.join("etc/apk/keys");
 
         let has_user_key = fs::read_dir(&keys_dir)
             .map(|entries| {
@@ -186,31 +185,45 @@ impl Builder {
             .unwrap_or(false);
 
         if force_key || !has_user_key {
-            let abuild_config = concat_path!(rootfs, "build/.abuild");
+            let abuild_config = rootfs.join("build/.abuild");
             if fs::metadata(&abuild_config).is_ok() {
                 fs::remove_dir_all(&abuild_config)?;
             }
 
-            let setup_cmd = format!(
+            let run_cmd = format!(
                 "type abuild > /dev/null 2>&1 || apk add {DEF_PACKAGES}
                 HOME=/build
                 abuild-keygen -a -n && \
                 cp -v /build/.abuild/{user}*.rsa.pub /etc/apk/keys/",
             );
 
-            Command::run(rootfs, None, Some(setup_cmd), false, false, false)?;
+            let config = SandBoxConfig {
+                rootfs: rootfs.clone(),
+                run_cmd,
+                ..Default::default()
+            };
+
+            map_result(SandBox::run(config))?;
         }
 
-        let cmd = format!(
+        let run_cmd = format!(
             "type abuild > /dev/null || apk add {DEF_PACKAGES}
             HOME=/build
             cd /build/{dir_name}
             abuild -r -F && \
             find \"/build/packages/build/{u}\" -name \"{pkg}-*.apk\" -exec apk add --allow-untrusted {{}} \\;",
-            u = utils::get_arch());
+            u = app_arch());
 
-        Command::run(rootfs, None, Some(cmd), true, true, true)?;
+        let config = SandBoxConfig {
+            rootfs,
+            run_cmd,
+            use_root: true,
+            ignore_extra_bind: true,
+            no_group: true,
+            ..Default::default()
+        };
 
+        map_result(SandBox::run(config))?;
         Ok(())
     }
 }

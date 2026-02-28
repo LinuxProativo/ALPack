@@ -6,7 +6,7 @@
 
 use crate::settings::settings_rootfs_dir;
 use crate::utils::map_result;
-use crate::{invalid_arg, parse_key_value};
+use crate::{invalid_arg, parse_value};
 
 use sandbox_utils::{SandBox, SandBoxConfig};
 use std::collections::VecDeque;
@@ -46,22 +46,22 @@ impl Run {
                 "-i" | "--ignore-extra-binds" => ignore_extra_bind = true,
                 "-n" | "--no-groups" => no_group = true,
                 a if a.starts_with("--bind-args=") => {
-                    args_bind = parse_key_value!("run", "parameters", arg)?;
+                    args_bind = parse_value!("run", "parameters", arg)?;
                 }
                 "-b" | "--bind-args" => {
-                    args_bind = parse_key_value!("run", "parameters", arg, args.pop_front())?;
+                    args_bind = parse_value!("run", "parameters", arg, args.pop_front())?;
                 }
                 a if a.starts_with("--command=") => {
-                    cmd_args.push(parse_key_value!("run", "command", arg)?);
+                    cmd_args.push(parse_value!("run", "command", arg)?);
                 }
                 "-c" | "--command" => {
-                    cmd_args.push(parse_key_value!("run", "command", arg, args.pop_front())?);
+                    cmd_args.push(parse_value!("run", "command", arg, args.pop_front())?);
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs = parse_key_value!("run", "directory", arg)?.into();
+                    rootfs = parse_value!("run", "directory", arg)?.into();
                 }
                 "-R" | "--rootfs" => {
-                    rootfs = parse_key_value!("run", "directory", arg, args.pop_front())?.into();
+                    rootfs = parse_value!("run", "directory", arg, args.pop_front())?.into();
                 }
                 "--" => {
                     cmd_args.extend(args.drain(..).map(|s| s.to_string()));

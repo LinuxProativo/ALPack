@@ -3,71 +3,34 @@
 //! Provides helper methods for path manipulation, environment discovery,
 //! file downloads, and stylized terminal output.
 
-use crate::concat_path;
-use crate::settings::Settings;
-
-use indicatif::{ProgressBar, ProgressStyle};
+use recursive_copy::{copy_recursive, CopyOptions};
+use sandbox_utils::{
+    app_name, failed_exist_rootfs, get_cmd_box, RootfsNotFoundError, SandBox, SandBoxConfig,
+    SEPARATOR,
+};
+use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::error::Error;
-use std::fs::File;
-use std::os::unix::fs::PermissionsExt;
-use std::sync::OnceLock;
-use std::{env, fs, io};
-use walkdir_minimal::WalkDir;
-use which::which;
+use std::fs;
+use std::path::PathBuf;
 
-/// Progress bar template for downloads and extractions.
-pub const DOWNLOAD_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta})";
-
-/// Visual separator for terminal output.
-pub const SEPARATOR: &str = "════════════════════════════════════════════════════════════";
-
-/// Cached application name.
-pub static APP_NAME: OnceLock<String> = OnceLock::new();
-
-/// Cached a safe home directory path.
-pub static SAFE_HOME: OnceLock<String> = OnceLock::new();
-
-/// Retrieves the safe home directory from the environment.
+/// Collects positional arguments from the queue until a new flag (starting with '-') is encountered.
 ///
-/// # Returns
-/// - A string slice representing the user's home directory.
-pub fn get_safe_home() -> &'static str {
-    SAFE_HOME.get_or_init(|| env::var("HOME").unwrap_or_else(|_| ".".to_string()))
-}
-
-/// Retrieves the current application name from the execution path.
+/// This function is useful for commands that accept multiple values, such as:
+/// `aports --get pkg1 pkg2 pkg3 --output /tmp`
 ///
-/// # Returns
-/// - A string slice containing the binary name or "ALPack" as fallback.
-pub fn get_app_name() -> &'static str {
-    APP_NAME.get_or_init(|| {
-        env::args()
-            .next()
-            .as_deref()
-            .and_then(|s| s.rsplit('/').next())
-            .unwrap_or("ALPack")
-            .to_string()
-    })
-}
+/// # Parameters
+/// * `args`: A mutable reference to the remaining CLI arguments queue.
+/// * `target`: A mutable reference to the `Vec<String>` where collected arguments will be stored.
+pub fn collect_args(args: &mut VecDeque<&str>, target: &mut Vec<String>) {
+    while let Some(arg) = args.pop_front() {
+        if arg.starts_with('-') {
+            args.push_front(arg);
+            break;
+        }
 
-/// Determines the target architecture string.
-///
-/// # Returns
-/// - A string representing the CPU architecture (e.g., "x86_64").
-pub fn get_arch() -> String {
-    env::var("ALPACK_ARCH")
-        .or_else(|_| env::var("ARCH"))
-        .unwrap_or_else(|_| env::consts::ARCH.to_string())
-}
-
-/// Displays a success message upon completing the environment setup.
-pub fn finish_msg_setup() {
-    let b = get_cmd_box(&format!("$ {} run", SAFE_HOME.wait()), Some(2), None).unwrap_or_default();
-
-    println!(
-        "{s}\n  Installation completed successfully!\n\n  To start the environment, run:\n\n{b}\n{s}",
-        s = SEPARATOR,
-    );
+        target.push(arg.to_string());
+    }
 }
 
 /// Verifies that the specified rootfs directory exists and is accessible.
@@ -78,226 +41,242 @@ pub fn finish_msg_setup() {
 /// # Returns
 /// - `Ok(())` if the directory exists.
 /// - `Err` with diagnostic info if missing.
-pub fn check_rootfs_exists(path: &str) -> Result<(), Box<dyn Error>> {
-    if !fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false) {
-        let b = get_cmd_box(&format!("$ {} setup", APP_NAME.wait()), Some(2), None)?;
-
-        return Err(format!(
-            "{s}\n  Error: rootfs directory not found.\n\n  Expected location:\n    -> {p}\n\n  Please run the following command to set it up:\n{b}\n{s}",
-            s = SEPARATOR,
-            p = path,
-        ).into());
+pub fn check_rootfs_exists(path: PathBuf) -> Result<(), Box<dyn Error>> {
+    if !path.is_dir() {
+        return failed_exist_rootfs(
+            &format!("{} setup", app_name()),
+            &path.display().to_string(),
+        );
     }
     Ok(())
 }
 
-/// Generates a stylized Unicode box containing a command string.
-///
-/// # Parameters
-/// - `command`: The text to be boxed.
-/// - `indent`: Optional number of leading spaces.
-/// - `size`: Optional fixed width for the box.
-///
-/// # Returns
-/// - A `String` containing the formatted box.
-pub fn get_cmd_box(
-    command: &str,
-    indent: Option<usize>,
-    size: Option<usize>,
-) -> Result<String, Box<dyn Error>> {
-    let padding = " ".repeat(indent.unwrap_or(0));
-    let width = size.unwrap_or(50).max(command.len() + 4);
-    let inner_width = width - 2;
-
-    let line = "═".repeat(inner_width);
-    let top = format!("{}╔{}╗", padding, line);
-    let bottom = format!("{}╚{}╝", padding, line);
-
-    let trailing_spaces = " ".repeat(inner_width - command.len() - 1);
-    let middle = format!("{}║ {}{}║", padding, command, trailing_spaces);
-
-    Ok(format!("{}\n{}\n{}", top, middle, bottom))
-}
-
-/// Recursively copies a directory and all its contents to a specified destination.
+/// Maps sandbox errors to visual terminal dialogs.
 ///
 /// # Arguments
-/// * `src` - The source directory to copy.
-/// * `dst` - The destination directory where the source will be copied.
+/// * `result` - The result from a SandBox execution.
 ///
 /// # Returns
-/// * `io::Result<()>` - Ok on success, or an error if the operation fails.
-pub fn copy_dir_recursive(src: &str, dst: &str) -> io::Result<()> {
-    println!("copy {src} to {dst}");
-    let dir_name = src.trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Invalid source path"))?;
-    let dest_root = concat_path!(dst, dir_name);
-
-    for entry in WalkDir::new(src)? {
-        let entry = entry.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        let relative = entry
-            .path()
-            .strip_prefix(src)
-            .unwrap()
-            .to_str()
-            .unwrap_or("");
-        let dest_path = concat_path!(dest_root, relative);
-
-        if entry.file_type()?.is_dir() {
-            fs::create_dir_all(&dest_path)?;
-        } else {
-            if let Some(pos) = dest_path.rfind('/') {
-                let _ = fs::create_dir_all(&dest_path[..pos]);
-            }
-            fs::copy(entry.path(), &dest_path)?;
+/// The original result or a formatted error dialog.
+pub fn map_result<T>(result: Result<T, Box<dyn Error>>) -> Result<T, Box<dyn Error>> {
+    result.map_err(|e| {
+        if let Some(err) = e.downcast_ref::<RootfsNotFoundError>() {
+            return failed_exist_rootfs(&format!("{} setup", app_name()), &err.0.to_string_lossy())
+                .unwrap_err();
         }
-    }
-    Ok(())
+        e
+    })
 }
 
-/// Attempts to create the target directory, falling back to a default path if permission is denied.
+/// Matches packages against the database content and prints a standardized result box.
+///
+/// This function internalizes the search logic by invoking the `collect_matches!` macro.
+/// It aggregates results from the provided database content based on the given package keys.
 ///
 /// # Parameters
-/// - `target`: The desired path to create.
+/// - `pkgs`: A slice of strings containing the package names or patterns to search for.
+/// - `content`: The raw string content of the database file to be scanned.
 ///
 /// # Returns
-/// - `Ok(PathBuf)` with the successfully created directory path (either the target or fallback).
-/// - `Err(io::Error)` if both the target and fallback directory creations fail.
-pub fn create_dir_with_fallback(target: &str) -> io::Result<String> {
-    match fs::create_dir_all(target) {
-        Ok(_) => Ok(target.to_string()),
-        Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {
-            eprintln!(
-                "\x1b[1;33mWarning\x1b[0m: Permission denied to create '{target}', using default directory instead...",
-            );
-            let path = Settings::load().set_rootfs();
-            fs::create_dir_all(&path)?;
-            Ok(path)
+/// - `Ok(())` if matches were found and successfully printed to stdout.
+/// - `Err` if the search result is empty or if the UI box generation fails.
+pub fn print_result(pkgs: &[String], content: &str, generic: bool) -> Result<(), Box<dyn Error>> {
+    let mut all_matches = Vec::new();
+
+    if generic {
+        for term in pkgs {
+            let matches = collect_generic_matches(term, content);
+            all_matches.extend(matches);
         }
-        Err(e) => Err(e),
-    }
-}
-
-/// Downloads a file from the specified URL and saves it to the destination folder.
-///
-/// # Arguments
-/// * `url` - The URL of the file to be downloaded.
-/// * `dest` - The directory where the file will be saved.
-/// * `filename` - The name of the file to save.
-///
-/// # Returns
-/// * `Ok(String)` - The full path of the saved file.
-/// * `Err`: An `io::Error` if the download or save fails.
-pub fn download_file(url: &str, dest: &str, filename: &str) -> io::Result<String> {
-    let save_dest = create_dir_with_fallback(dest)?;
-    let save_file = concat_path!(&save_dest, filename);
-
-    if fs::metadata(&save_file).is_ok() {
-        println!("File '{}' already exists, skipping download.", filename);
-        return Ok(save_dest);
+    } else {
+        let matches = collect_unique_pkgs(pkgs, content);
+        all_matches.extend(matches);
     }
 
-    println!("Saving file to: {save_file}");
-    let resp = ureq::get(url)
-        .call()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    let length = resp
-        .headers()
-        .get("Content-Length")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .parse()
-        .unwrap();
+    if all_matches.is_empty() {
+        return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
+    }
 
-    let bar = ProgressBar::new(length);
-    bar.set_message("Downloading...");
-    bar.set_style(
-        ProgressStyle::with_template(DOWNLOAD_TEMPLATE)
-            .unwrap()
-            .progress_chars("##-"),
+    let mut sorted_matches: Vec<&str> = all_matches.into_iter().collect();
+    sorted_matches.sort();
+    sorted_matches.dedup();
+
+    let result_output = sorted_matches.join("\n");
+
+    println!(
+        "{u}\n{}\n{result_output}\n{u}",
+        get_cmd_box("SEARCH RESULT:", None, Some(18))?,
+        u = SEPARATOR
     );
 
-    io::copy(
-        &mut bar.wrap_read(resp.into_body().into_reader()),
-        &mut File::create(save_file)?,
-    )?;
-    bar.finish_with_message("Downloaded!");
-    Ok(save_dest)
+    Ok(())
 }
 
-/// Sets executable permissions on a file (Unix-only).
+/// Sets up a local repository database within the rootfs.
 ///
-/// # Arguments
-/// * `path` - Path to the file whose permissions will be modified.
+/// This function ensures the build directory exists, clones the remote
+/// repository using a blobless filter (`tree:0`) to save bandwidth, and
+/// generates a flattened database file by filtering specific branches.
+///
+/// # Parameters
+/// - `rootfs_dir`: Path to the root filesystem host directory.
+/// - `url`: The remote Git repository URL.
+/// - `repo`: The local name for the repository (e.g., "aports").
+/// - `branches`: A list of branch names or paths to include in the database.
 ///
 /// # Returns
-/// * `Ok(())` if permissions were successfully updated.
-/// * `Err(io::Error)` if the file metadata cannot be read or permissions cannot be set.
-fn make_executable(path: &str) -> io::Result<()> {
-    let mut perms = fs::metadata(path)?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(path, perms)
+/// - `Ok(())` if the repository was successfully initialized and indexed.
+/// - `Err` if Git operations or filesystem modifications fail.
+pub fn update_git_repository(
+    rootfs_dir: PathBuf,
+    url: &str,
+    repo: &str,
+    branches: &[&str],
+) -> Result<(), Box<dyn Error>> {
+    let build_path = rootfs_dir.join("build").join(repo);
+    let database_path = rootfs_dir.join("build").join(format!("{repo}-database"));
+
+    let _ = fs::remove_dir_all(&build_path);
+    let _ = fs::remove_file(&database_path);
+
+    fs::create_dir_all(&build_path)?;
+
+    let filter = branches.join("|");
+    let cmd_script = format!(
+        "type git > /dev/null || apk add git
+        cd /build
+        git clone --depth=1 --filter=tree:0 --no-checkout {url} {repo} && \
+        cd {repo} && \
+        git fetch --depth=1 --filter=tree:0 && \
+        git ls-tree -r HEAD --name-only | grep -E \"({filter})\" > ../{repo}-database",
+    );
+
+    let config = SandBoxConfig {
+        rootfs: rootfs_dir.into(),
+        run_cmd: cmd_script,
+        use_root: true,
+        ignore_extra_bind: true,
+        ..Default::default()
+    };
+
+    map_result(SandBox::run(config))?;
+    Ok(())
 }
 
-/// Returns the download URL for a supported rootfs command binary.
+/// Orchestrates the selective retrieval of package sources from a git repository.
 ///
-/// # Arguments
-/// * `cmd` - The rootfs command name (e.g. `"proot"` or `"bwrap"`).
+/// It processes match results to identify relevant package directories,
+/// configures Git's sparse-checkout to download only those specific paths,
+/// and copies the resulting files to the final output destination.
+///
+/// # Parameters
+/// - `rootfs`: Path to the root filesystem host directory.
+/// - `repo_name`: The subdirectory name within `/build/` (e.g., "aports").
+/// - `pkgs`: A slice of strings containing the package names to be retrieved.
+/// - `content`: The raw string content of the database file.
+/// - `output`: The destination directory for the retrieved files.
 ///
 /// # Returns
-/// * `Some(&'static str)` containing the download URL if the command
-///   is supported.
-/// * `None` if the command is unknown or unsupported.
-fn binary_url(cmd: &str) -> Option<&'static str> {
-    match cmd {
-        "proot" => Some("https://github.com/LinuxDicasPro/StaticHub/releases/download/proot/proot"),
-        "bwrap" => Some("https://github.com/LinuxDicasPro/StaticHub/releases/download/bwrap/bwrap"),
-        _ => None,
+/// - `Ok(())` if all package files were retrieved and copied.
+/// - `Err` if no matches are found or if the sparse-checkout process fails.
+pub fn download_git_sources_files(
+    rootfs: PathBuf,
+    repo_name: &str,
+    pkgs: &[String],
+    content: &str,
+    output: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    let matches = collect_unique_pkgs(pkgs, content);
+
+    if matches.is_empty() {
+        return Err(format!("{u}\nResult not found!\n{u}", u = SEPARATOR).into());
     }
+
+    let pkg_dirs: HashSet<&str> = matches
+        .iter()
+        .filter(|line| line.contains("APKBUILD"))
+        .filter_map(|line| line.rsplit_once('/').map(|(dir, _)| dir))
+        .collect();
+
+    let pkg_dirs_vec: Vec<&str> = pkg_dirs.into_iter().collect();
+
+    let run_cmd = format!(
+        "cd /build/{repo_name}
+         git sparse-checkout init --cone && \
+         git sparse-checkout set {} && \
+         git checkout",
+        pkg_dirs_vec.join(" ")
+    );
+
+    let config = SandBoxConfig {
+        rootfs: rootfs.clone(),
+        run_cmd,
+        use_root: true,
+        ignore_extra_bind: true,
+        ..Default::default()
+    };
+
+    map_result(SandBox::run(config))?;
+
+    let options = CopyOptions {
+        overwrite: true,
+        follow_symlinks: true,
+        ..Default::default()
+    };
+
+    for dir in pkg_dirs_vec {
+        copy_recursive(
+            &rootfs.join("build").join(repo_name).join(dir),
+            &output,
+            &options,
+        )?;
+    }
+    Ok(())
 }
 
-/// Verifies the availability of the specified rootfs command and downloads it if necessary.
-/// Only x86_64 architecture is supported for automatic downloads. On other
-/// architectures, the command must already be available in the system.
+/// Collects unique lines from the database that match specific package names.
 ///
-/// # Arguments
-/// * `cmd_rootfs` - The name of the rootfs command (`"proot"` or `"bwrap"`).
+/// This function scans the provided content for lines that represent an `APKBUILD`
+/// file within a specific package directory structure. It ensures that each
+/// matching line is returned only once, even if multiple search terms overlap.
+///
+/// # Parameters
+/// * `pkgs`: A slice of `String` containing the names of the packages to search for.
+/// * `content`: The raw string content of the aports database (usually read from a file).
+///   The function uses the lifetime `'a` to ensure returned references to remain valid
+///   as long as this content exists in memory.
 ///
 /// # Returns
-/// * `Ok(PathBuf)` - The full path to the resolved executable.
-/// * `Err(io::Error)` if the command is unsupported, the architecture is not supported,
-///   the download fails or file permissions cannot be set.
-pub fn verify_and_download_rootfs_command(cmd_rootfs: &str) -> io::Result<String> {
-    if let Some(path) = which(cmd_rootfs).ok() {
-        return Ok(path.to_str().unwrap_or(cmd_rootfs).to_string());
+/// A `HashSet<&'a str>` containing unique matching lines from the `content`.
+/// Each line is a reference to a slice of the original `content` string,
+/// avoiding unnecessary memory allocations.
+pub fn collect_unique_pkgs<'a>(pkgs: &[String], content: &'a str) -> HashSet<&'a str> {
+    let mut unique_matches = HashSet::new();
+
+    for pkg in pkgs {
+        let pattern = format!("/{}/", pkg);
+        let matches = content.lines().filter(|line| line.contains(&pattern));
+        unique_matches.extend(matches);
     }
 
-    let local_dir = concat_path!(get_safe_home(), ".local/bin");
-    let local_path = concat_path!(local_dir, cmd_rootfs);
+    unique_matches
+}
 
-    if fs::metadata(&local_path).is_ok() {
-        return Ok(local_path);
-    }
+/// Performs a generic search across the database content.
+///
+/// It returns any line that contains the search term, useful for discovering
+/// packages when the exact name is not known.
+///
+/// # Parameters
+/// * `term`: The search string (e.g., "glib").
+/// * `content`: The database content.
+///
+/// # Returns
+/// A sorted `Vec<&str>` of unique matching lines.
+pub fn collect_generic_matches<'a>(term: &str, content: &'a str) -> Vec<&'a str> {
+    let matches: HashSet<&str> = content.lines().filter(|line| line.contains(term)).collect();
 
-    if env::consts::ARCH != "x86_64" {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            format!(
-                "{cmd_rootfs} not found in the system and no binary is available for this architecture",
-            ),
-        ));
-    }
-
-    let url = binary_url(cmd_rootfs)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid cmd_rootfs"))?;
-
-    let _ = fs::create_dir_all(&local_dir)?;
-
-    let downloaded = download_file(url, &local_dir, cmd_rootfs)?;
-    make_executable(&downloaded)?;
-
-    Ok(downloaded)
+    let mut sorted_matches: Vec<&str> = matches.into_iter().collect();
+    sorted_matches.sort();
+    sorted_matches
 }

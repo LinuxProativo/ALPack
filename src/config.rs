@@ -5,7 +5,7 @@
 //! and directory paths via CLI arguments.
 
 use crate::settings::Settings;
-use crate::{invalid_arg, parse_key_value};
+use crate::{invalid_arg, parse_value};
 
 use std::collections::VecDeque;
 use std::error::Error;
@@ -42,32 +42,32 @@ impl Config {
                 "--use-latest-stable" => sett.release = "latest-stable".to_string(),
                 "--use-edge" => sett.release = "edge".to_string(),
                 a if a.starts_with("--cache-dir=") => {
-                    sett.cache_dir = parse_key_value!("config", "directory", arg)?.into();
+                    sett.cache_dir = parse_value!("config", "directory", arg)?.into();
                 }
                 "--cache-dir" => {
                     sett.cache_dir =
-                        parse_key_value!("config", "directory", arg, args.pop_front())?.into();
+                        parse_value!("config", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--rootfs-dir=") => {
-                    sett.rootfs_dir = parse_key_value!("config", "directory", arg)?.into();
+                    sett.rootfs_dir = parse_value!("config", "directory", arg)?.into();
                 }
                 "--rootfs-dir" => {
                     sett.rootfs_dir =
-                        parse_key_value!("config", "directory", arg, args.pop_front())?.into();
+                        parse_value!("config", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--output-dir=") => {
-                    sett.output_dir = parse_key_value!("config", "directory", arg)?.into();
+                    sett.output_dir = parse_value!("config", "directory", arg)?.into();
                 }
                 "--output-dir" => {
                     sett.output_dir =
-                        parse_key_value!("config", "directory", arg, args.pop_front())?.into();
+                        parse_value!("config", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--default-mirror=") => {
-                    sett.default_mirror = parse_key_value!("config", "mirror", arg)?;
+                    sett.default_mirror = parse_value!("config", "mirror", arg)?;
                 }
                 "--default-mirror" => {
                     sett.default_mirror =
-                        parse_key_value!("config", "mirror", arg, args.pop_front())?;
+                        parse_value!("config", "mirror", arg, args.pop_front())?;
                 }
                 _ => return invalid_arg!("config", arg),
             }

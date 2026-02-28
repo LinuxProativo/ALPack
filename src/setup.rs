@@ -7,7 +7,7 @@
 use crate::mirror::Mirror;
 use crate::settings::{settings_cache_dir, settings_rootfs_dir};
 use crate::utils::map_result;
-use crate::{invalid_arg, parse_key_value};
+use crate::{invalid_arg, parse_value};
 
 use regex::Regex;
 use sandbox_utils::{app_arch, app_name, success_finish_setup, temp_cache, SandBox, SandBoxConfig};
@@ -63,23 +63,23 @@ impl Setup {
                 "--minimal" => minimal = true,
                 "-r" | "--reinstall" => reinstall = true,
                 a if a.starts_with("--mirror=") => {
-                    use_mirror = Some(parse_key_value!("setup", "url", arg)?);
+                    use_mirror = Some(parse_value!("setup", "url", arg)?);
                 }
                 "--mirror" => {
-                    use_mirror = Some(parse_key_value!("setup", "url", arg, args.pop_front())?);
+                    use_mirror = Some(parse_value!("setup", "url", arg, args.pop_front())?);
                 }
                 a if a.starts_with("--cache=") => {
-                    cache_dir = parse_key_value!("setup", "directory", arg)?.into();
+                    cache_dir = parse_value!("setup", "directory", arg)?.into();
                 }
                 "--cache" => {
                     cache_dir =
-                        parse_key_value!("setup", "directory", arg, args.pop_front())?.into();
+                        parse_value!("setup", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs = parse_key_value!("setup", "directory", arg)?.into();
+                    rootfs = parse_value!("setup", "directory", arg)?.into();
                 }
                 "-R" | "--rootfs" => {
-                    rootfs = parse_key_value!("setup", "directory", arg, args.pop_front())?.into();
+                    rootfs = parse_value!("setup", "directory", arg, args.pop_front())?.into();
                 }
                 _ => return invalid_arg!("setup", arg),
             }

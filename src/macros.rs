@@ -54,41 +54,6 @@ macro_rules! missing_arg {
     }};
 }
 
-/// Collects positional arguments from a queue until it hits the next flag.
-///
-/// Stops a collection if an argument starts with `-`, pushing it back to
-/// the front of the queue to preserve it for the next parsing step.
-#[macro_export]
-macro_rules! collect_args {
-    ($args:expr, $target:expr) => {
-        while let Some(arg) = $args.pop_front() {
-            if arg.starts_with("-") {
-                $args.push_front(arg);
-                break;
-            }
-            $target.push(arg.to_string());
-        }
-    };
-}
-
-/// Searches for package patterns within a text content and collects matching lines.
-///
-/// PERFORMANCE: Pre-formats the search pattern outside the inner loop to
-/// minimize heap allocations during large database lookups.
-#[macro_export]
-macro_rules! collect_matches {
-    ($pkgs:expr, $content:expr, $result:expr) => {
-        for pkg in $pkgs {
-            let pattern = format!("/{}/", pkg);
-            for line in $content.lines().filter(|line| line.contains(&pattern)) {
-                if !$result.is_empty() {
-                    $result.push('\n');
-                }
-                $result.push_str(line);
-            }
-        }
-    };
-}
 
 /// Parses key-value pairs in both `--key=value` and `--key value` formats.
 ///
@@ -100,7 +65,7 @@ macro_rules! collect_matches {
 /// - `Ok(String)`: The extracted value.
 /// - `Err(String)`: A detailed usage message if the value is missing.
 #[macro_export]
-macro_rules! parse_key_value {
+macro_rules! parse_value {
     ($sub:expr, $val_name:expr, $arg:expr, $next:expr) => {{
         let arg_ref: &str = $arg.as_ref();
 
@@ -128,7 +93,7 @@ macro_rules! parse_key_value {
                 let cmd = std::env::current_exe()
                     .ok()
                     .and_then(|p| p.file_name()?.to_str().map(|s| s.to_string()))
-                    .unwrap_or_else(|| "ALPack".to_string());
+                    .unwrap_or_else(|| sandbox_utils::app_name());
 
                 let key = arg_ref.split('=').next().unwrap_or(arg_ref);
                 let sp = if arg_ref.contains('=') { "=" } else { " " };
@@ -142,6 +107,6 @@ macro_rules! parse_key_value {
     }};
 
     ($sub:expr, $val_name:expr, $arg:expr) => {
-        $crate::parse_key_value!($sub, $val_name, $arg, Option::<&str>::None)
+        $crate::parse_value!($sub, $val_name, $arg, Option::<&str>::None)
     };
 }

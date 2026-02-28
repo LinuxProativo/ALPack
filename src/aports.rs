@@ -5,8 +5,10 @@
 //! package searching, and source file retrieval via sparse-checkout.
 
 use crate::settings::{settings_output_dir, settings_rootfs_dir};
-use crate::{collect_args, invalid_arg, missing_arg, parse_key_value, utils};
+use crate::utils::collect_args;
+use crate::{invalid_arg, missing_arg, parse_value, utils};
 
+use sandbox_utils::app_name;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;
@@ -44,55 +46,49 @@ impl Aports {
 
         let mut rootfs_dir = settings_rootfs_dir();
         let mut output_dir = settings_output_dir();
-        let (mut search_pkg, mut get_pkg) = (Vec::new(), Vec::new());
-        let (mut update, mut search, mut get, mut bk) = (false, false, false, false);
+        let (mut s_pkg, mut get_pkg) = (Vec::new(), Vec::new());
+        let (mut update, mut search, mut get, mut generic) = (false, false, false, false);
+        let mut bk = false;
 
         while let Some(arg) = args.pop_front() {
             match arg {
                 "-u" | "--update" => (update, bk) = (true, true),
                 a if a.starts_with("--output=") => {
-                    output_dir = parse_key_value!("aports", "directory", arg)?.into();
+                    output_dir = parse_value!("aports", "directory", arg)?.into();
                 }
                 "-o" | "--output" => {
-                    output_dir =
-                        parse_key_value!("aports", "directory", arg, args.pop_front())?.into();
+                    output_dir = parse_value!("aports", "directory", arg, args.pop_front())?.into();
                 }
                 a if a.starts_with("--search=") => {
                     (search, bk) = (true, true);
-                    search_pkg.push(parse_key_value!("aports", "package", arg)?);
-                    collect_args!(args, search_pkg);
+                    s_pkg.push(parse_value!("aports", "package", arg)?);
+                    collect_args(&mut args, &mut s_pkg);
                 }
                 "-s" | "--search" => {
+                    (search, bk, generic) = (true, true, true);
+                    s_pkg.push(parse_value!("aports", "package", arg, args.pop_front())?);
+                    collect_args(&mut args, &mut s_pkg);
+                }
+                "-S" | "--strict-search" => {
                     (search, bk) = (true, true);
-                    search_pkg.push(parse_key_value!(
-                        "aports",
-                        "package",
-                        arg,
-                        args.pop_front()
-                    )?);
-                    collect_args!(args, search_pkg);
+                    s_pkg.push(parse_value!("aports", "package", arg, args.pop_front())?);
+                    collect_args(&mut args, &mut s_pkg);
                 }
                 a if a.starts_with("--get=") => {
                     (get, bk) = (true, true);
-                    get_pkg.push(parse_key_value!("aports", "package", arg)?);
-                    collect_args!(args, get_pkg);
+                    get_pkg.push(parse_value!("aports", "package", arg)?);
+                    collect_args(&mut args, &mut get_pkg);
                 }
                 "-g" | "--get" => {
                     (get, bk) = (true, true);
-                    get_pkg.push(parse_key_value!(
-                        "aports",
-                        "package",
-                        arg,
-                        args.pop_front()
-                    )?);
-                    collect_args!(args, get_pkg);
+                    get_pkg.push(parse_value!("aports", "package", arg, args.pop_front())?);
+                    collect_args(&mut args, &mut get_pkg);
                 }
                 a if a.starts_with("--rootfs=") => {
-                    rootfs_dir = parse_key_value!("aports", "directory", arg)?.into();
+                    rootfs_dir = parse_value!("aports", "directory", arg)?.into();
                 }
                 "-R" | "--rootfs" => {
-                    rootfs_dir =
-                        parse_key_value!("aports", "directory", arg, args.pop_front())?.into();
+                    rootfs_dir = parse_value!("aports", "directory", arg, args.pop_front())?.into();
                 }
                 other => return invalid_arg!("aports", other),
             }
@@ -116,11 +112,20 @@ impl Aports {
         }
 
         utils::check_rootfs_exists(rootfs_dir.clone())?;
-        let content: String =
-            fs::read_to_string(rootfs_dir.join("build/aports-database")).unwrap_or_default();
+
+        let db_path = rootfs_dir.join("build/aports-database");
+
+        if !db_path.exists() {
+            return Err(format!(
+                "The aports database was not found at: {}\nPlease run '{} aports -u' first to initialize the repository.",
+                db_path.display(), app_name()
+            ).into());
+        }
+
+        let content = fs::read_to_string(&db_path)?;
 
         if search {
-            utils::print_result(&search_pkg, &content)?;
+            utils::print_result(&s_pkg, &content, generic)?;
             if !get {
                 return Ok(());
             }
