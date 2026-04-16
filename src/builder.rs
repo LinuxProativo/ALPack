@@ -8,10 +8,8 @@
 use crate::settings::settings_rootfs_dir;
 use crate::setup::DEF_PACKAGES;
 use crate::utils::map_result;
-use crate::{invalid_arg, missing_arg, parse_value};
-
 use recursive_copy::{copy_recursive, CopyOptions};
-use sandbox_utils::{app_arch, SandBox, SandBoxConfig};
+use sandbox_utils::{app_arch, invalid_arg, missing_arg, parse_value, SandBox, SandBoxConfig};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
@@ -218,8 +216,7 @@ impl Builder {
             rootfs,
             run_cmd,
             use_root: true,
-            ignore_extra_bind: true,
-            no_group: true,
+            secure_rootfs: true,
             ..Default::default()
         };
 
