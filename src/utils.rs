@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 /// Collects positional arguments from the queue until a new flag (starting with '-') is encountered.
 ///
-/// This function is useful for commands that accept multiple values, such as:
+/// This function is useful for commands that accept multiple values, such as
 /// `aports --get pkg1 pkg2 pkg3 --output /tmp`
 ///
 /// # Parameters
