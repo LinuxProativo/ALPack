@@ -7,14 +7,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Linux-FCC624?&logo=linux&style=flat-square" alt="Platform Linux">
-  <a href="https://github.com/LinuxProativo/ALPack/actions/workflows/rust.yml" style="text-decoration:none;"><img src="https://img.shields.io/github/actions/workflow/status/LinuxProativo/ALPack/rust.yml?label=Test&style=flat-square&logo=github" alt="Build Status"></a>
+  <img src="https://img.shields.io/github/actions/workflow/status/LinuxProativo/ALPack/rust.yml?label=Test&style=flat-square&logo=github" alt="Build Status">
   <img src="https://img.shields.io/badge/Language-Rust_2024-orange?style=flat-square&logo=rust" alt="Rust Version">
   <img src="https://img.shields.io/badge/Build-Cargo-444444?style=flat-square&logo=rust" alt="Cargo Build">
-  <a href="https://github.com/LinuxProativo/ALPack/releases"  style="text-decoration:none;"><img src="https://img.shields.io/github/v/release/LinuxProativo/ALPack?color=00599c&label=Release&style=flat-square" alt="Latest Release"></a>
+  <img src="https://img.shields.io/github/v/release/LinuxProativo/ALPack?color=00599c&label=Release&style=flat-square" alt="Latest Release">
   <img src="https://img.shields.io/github/last-commit/LinuxProativo/ALPack?color=00599c&label=Last%20Commit&style=flat-square" alt="Last Commit">
-  <a href="/LICENSE">
-    <img src="https://img.shields.io/github/license/LinuxProativo/ALPack?color=007ec6&label=License&style=flat-square" alt="License">
-  </a>
+  <img src="https://img.shields.io/github/license/LinuxProativo/ALPack?color=007ec6&label=License&style=flat-square" alt="License">
 </p>
 
 **ALPack**  is a tool developed in Rust designed to create and manage multiple
@@ -134,9 +132,11 @@ Compiling static binaries offers a significant advantage when you need to distri
 an executable that does not depend on the host's `libc` or other dynamic libraries.
 ALPack streamlines this process because:
 
-- 📌 It provides a **ready-to-use and predictable Alpine rootfs** for compilation, or a minimal environment where you maintain full control over the build toolchain;
+- 📌 It provides a **ready-to-use and predictable Alpine rootfs** for compilation,
+or a minimal environment where you maintain full control over the build toolchain;
 
-- 📌 It isolates the build from the host system, ensuring that compilation is performed without cluttering the host or relying on local toolchains;
+- 📌 It isolates the build from the host system, ensuring that compilation is performed
+without cluttering the host or relying on local toolchains;
 
 - 📌 **ALPack itself is distributed as a static binary**, simplifying the portability of the
 tool across any environment without the need to install multiple dependencies;
