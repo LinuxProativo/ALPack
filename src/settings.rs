@@ -6,7 +6,6 @@
 use sandbox_utils::{
     config_file, default_cache, default_rootfs, get_config_diff, render_table, safe_home, USE_PROOT,
 };
-
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::PathBuf;

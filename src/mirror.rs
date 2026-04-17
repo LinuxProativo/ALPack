@@ -5,7 +5,6 @@
 //! valid paths for rootfs tarballs and APK repositories.
 
 use crate::settings::{settings_mirror, settings_release};
-
 use sandbox_utils::app_arch;
 use std::error::Error;
 

@@ -6,10 +6,9 @@
 //! specifically tailored for Adélie's repository structure.
 
 use crate::settings::{settings_output_dir, settings_rootfs_dir};
+use crate::utils;
 use crate::utils::collect_args;
-use crate::{invalid_arg, missing_arg, parse_value, utils};
-
-use sandbox_utils::app_name;
+use sandbox_utils::{app_name, invalid_arg, missing_arg, parse_value};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;

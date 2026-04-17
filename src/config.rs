@@ -5,8 +5,7 @@
 //! and directory paths via CLI arguments.
 
 use crate::settings::Settings;
-use crate::{invalid_arg, parse_value};
-
+use sandbox_utils::{invalid_arg, parse_value};
 use std::collections::VecDeque;
 use std::error::Error;
 
@@ -66,8 +65,7 @@ impl Config {
                     sett.default_mirror = parse_value!("config", "mirror", arg)?;
                 }
                 "--default-mirror" => {
-                    sett.default_mirror =
-                        parse_value!("config", "mirror", arg, args.pop_front())?;
+                    sett.default_mirror = parse_value!("config", "mirror", arg, args.pop_front())?;
                 }
                 _ => return invalid_arg!("config", arg),
             }
