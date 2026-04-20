@@ -18,7 +18,7 @@ use std::path::PathBuf;
 ///
 /// This function is useful for commands that accept multiple values, such as
 /// `aports --get pkg1 pkg2 pkg3 --output /tmp`
-///
+///rootfs.join("build").join(repo_name).display()
 /// # Parameters
 /// * `args`: A mutable reference to the remaining CLI arguments queue.
 /// * `target`: A mutable reference to the `Vec<String>` where collected arguments will be stored.
@@ -133,8 +133,9 @@ pub fn update_git_repository(
     repo: &str,
     branches: &[&str],
 ) -> Result<(), Box<dyn Error>> {
-    let build_path = rootfs_dir.join("build").join(repo);
-    let database_path = rootfs_dir.join("build").join(format!("{repo}-database"));
+    let build_dir = rootfs_dir.join("build");
+    let build_path = build_dir.join(repo);
+    let database_path = build_dir.join(format!("{repo}-database"));
 
     let _ = fs::remove_dir_all(&build_path);
     let _ = fs::remove_file(&database_path);
@@ -144,11 +145,12 @@ pub fn update_git_repository(
     let filter = branches.join("|");
     let cmd_script = format!(
         "type git > /dev/null || apk add git
-        cd /build
+        cd {}
         git clone --depth=1 --filter=tree:0 --no-checkout {url} {repo} && \
         cd {repo} && \
         git fetch --depth=1 --filter=tree:0 && \
         git ls-tree -r HEAD --name-only | grep -E \"({filter})\" > ../{repo}-database",
+        build_dir.display(),
     );
 
     let config = SandBoxConfig {
@@ -201,11 +203,12 @@ pub fn download_git_sources_files(
     let pkg_dirs_vec: Vec<&str> = pkg_dirs.into_iter().collect();
 
     let run_cmd = format!(
-        "cd /build/{repo_name}
-         git sparse-checkout init --cone && \
-         git sparse-checkout set {} && \
-         git checkout",
-        pkg_dirs_vec.join(" ")
+        "cd {}
+        git sparse-checkout init --cone && \
+        git sparse-checkout set {} && \
+        git checkout",
+        rootfs.join("build").join(repo_name).display(),
+        pkg_dirs_vec.join(" "),
     );
 
     let config = SandBoxConfig {

@@ -4,7 +4,8 @@
 //! global path and safe home directory fallbacks.
 
 use sandbox_utils::{
-    config_file, default_cache, default_rootfs, get_config_diff, render_table, safe_home, USE_PROOT,
+    config_file, default_cache, default_rootfs, get_config_diff, render_table, safe_home,
+    InodeMode, OverlayAction, USE_PROOT,
 };
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -27,6 +28,12 @@ pub struct Settings {
     pub release: String,
     /// Default output directory for build artifacts.
     pub output_dir: PathBuf,
+    /// Whether to use an overlay filesystem (e.g., OverlayFS) for the rootfs.
+    pub use_overlay: bool,
+    /// The inode management mode for the overlay (e.g., Virtual or Persistent).
+    pub overlay_inode_mode: InodeMode,
+    /// The cleanup or preserve action to take on the overlay after execution.
+    pub overlay_action: OverlayAction,
 }
 
 /// Global thread-safe storage for application settings.
@@ -42,6 +49,9 @@ impl Default for Settings {
             cmd_rootfs: USE_PROOT.to_string(),
             release: "latest-stable".to_string(),
             output_dir: PathBuf::new(),
+            use_overlay: false,
+            overlay_inode_mode: InodeMode::Virtual,
+            overlay_action: OverlayAction::Preserve,
         }
     }
 }
@@ -190,4 +200,30 @@ pub fn settings_output_dir() -> PathBuf {
     } else {
         out.clone()
     }
+}
+
+/// Returns whether the overlay filesystem is enabled.
+///
+/// # Returns
+/// `true` if the sandbox should use an overlay layer over the rootfs.
+pub fn settings_use_overlay() -> bool {
+    SETTINGS.wait().use_overlay
+}
+
+/// Returns the configured action for the overlay after the session ends.
+///
+/// Common actions include preserving the changes or discarding them.
+///
+/// # Returns
+/// An `OverlayAction` variant.
+pub fn settings_overlay_action() -> OverlayAction {
+    SETTINGS.wait().overlay_action.clone()
+}
+
+/// Returns the inode handling mode for the overlay filesystem.
+///
+/// # Returns
+/// An `InodeMode` variant determining how file identifiers are managed.
+pub fn settings_overlay_inode_mode() -> InodeMode {
+    SETTINGS.wait().overlay_inode_mode.clone()
 }

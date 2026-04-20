@@ -5,7 +5,7 @@
 //! and directory paths via CLI arguments.
 
 use crate::settings::Settings;
-use sandbox_utils::{invalid_arg, parse_value};
+use sandbox_utils::{invalid_arg, parse_value, InodeMode, OverlayAction};
 use std::collections::VecDeque;
 use std::error::Error;
 
@@ -36,6 +36,14 @@ impl Config {
 
         while let Some(arg) = args.pop_front() {
             match arg {
+                "--enable-overlay" | "--use-overlay" => sett.use_overlay = true,
+                "--disable-overlay" => sett.use_overlay = false,
+                "--use-persistent-inode" => sett.overlay_inode_mode = InodeMode::Persistent,
+                "--use-virtual-inode" => sett.overlay_inode_mode = InodeMode::Virtual,
+                "--overlay-action-discard" => sett.overlay_action = OverlayAction::Discard,
+                "--overlay-action-commit" => sett.overlay_action = OverlayAction::Commit,
+                "--overlay-action-commit-atomic" => sett.overlay_action = OverlayAction::CommitAtomic,
+                "--overlay-action-preserve" => sett.overlay_action = OverlayAction::Preserve,
                 "--use-proot" => sett.cmd_rootfs = "proot".to_string(),
                 "--use-bwrap" => sett.cmd_rootfs = "bwrap".to_string(),
                 "--use-latest-stable" => sett.release = "latest-stable".to_string(),

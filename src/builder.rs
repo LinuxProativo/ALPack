@@ -5,11 +5,15 @@
 //! It supports building from directories (contextual builds) or
 //! standalone APKBUILD files.
 
-use crate::settings::settings_rootfs_dir;
+use crate::settings::{
+    settings_overlay_action, settings_overlay_inode_mode, settings_rootfs_dir, settings_use_overlay,
+};
 use crate::setup::DEF_PACKAGES;
 use crate::utils::map_result;
 use recursive_copy::{copy_recursive, CopyOptions};
-use sandbox_utils::{app_arch, invalid_arg, missing_arg, parse_value, SandBox, SandBoxConfig};
+use sandbox_utils::{
+    app_arch, invalid_arg, missing_arg, parse_value, OverlayAction, SandBox, SandBoxConfig,
+};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fs::File;
@@ -51,10 +55,16 @@ impl Builder {
         let mut build_targets = Vec::new();
         let mut rootfs_dir = settings_rootfs_dir();
         let mut force_key = false;
+        let mut use_overlay = settings_use_overlay();
+        let mut overlay_action = settings_overlay_action();
 
         while let Some(arg) = args.pop_front() {
             match arg {
                 "--force-key" => force_key = true,
+                "-e" | "--ephemeral" => {
+                    use_overlay = true;
+                    overlay_action = OverlayAction::Discard;
+                }
                 a if a.starts_with("--rootfs=") => {
                     rootfs_dir = parse_value!("builder", "directory", arg)?.into();
                 }
@@ -117,7 +127,14 @@ impl Builder {
                 copy_recursive(source_path, &target_dir, &CopyOptions::default())?;
             }
 
-            Self::run_abuild(rootfs_dir.clone(), &folder_name, &pkg_name, force_key)?;
+            Self::run_abuild(
+                rootfs_dir.clone(),
+                &folder_name,
+                &pkg_name,
+                force_key,
+                use_overlay,
+                overlay_action,
+            )?;
         }
 
         Ok(())
@@ -159,6 +176,8 @@ impl Builder {
     /// * `dir_name` - The subdirectory name for the build context.
     /// * `pkg` - The package name for final APK installation.
     /// * `force_key` - If true, regenerates RSA keys even if they exist.
+    /// * `use_overlay` - If true, enable Overlay.
+    /// * `overlay_action` - Set overlay action.
     ///
     /// # Returns
     /// * `Ok(())` - If the `abuild` command executes successfully.
@@ -168,9 +187,12 @@ impl Builder {
         dir_name: &str,
         pkg: &str,
         force_key: bool,
+        use_overlay: bool,
+        overlay_action: OverlayAction,
     ) -> Result<(), Box<dyn Error>> {
         let user = env::var("USER").unwrap_or_else(|_| "root".into());
-        let keys_dir = rootfs.join("etc/apk/keys");
+        let build_dir = rootfs.join("build");
+        let keys_dir = rootfs.join("rootfs/etc/apk/keys");
 
         let has_user_key = fs::read_dir(&keys_dir)
             .map(|entries| {
@@ -183,16 +205,18 @@ impl Builder {
             .unwrap_or(false);
 
         if force_key || !has_user_key {
-            let abuild_config = rootfs.join("build/.abuild");
+            let abuild_config = build_dir.join(".abuild");
             if fs::metadata(&abuild_config).is_ok() {
                 fs::remove_dir_all(&abuild_config)?;
             }
 
             let run_cmd = format!(
                 "type abuild > /dev/null 2>&1 || apk add {DEF_PACKAGES}
-                HOME=/build
+                HOME={b}
                 abuild-keygen -a -n && \
-                cp -v /build/.abuild/{user}*.rsa.pub /etc/apk/keys/",
+                cp -v {f} /etc/apk/keys",
+                b = build_dir.display(),
+                f = &abuild_config.join(format!("{user}*.rsa.pub")).display()
             );
 
             let config = SandBoxConfig {
@@ -206,17 +230,25 @@ impl Builder {
 
         let run_cmd = format!(
             "type abuild > /dev/null || apk add {DEF_PACKAGES}
-            HOME=/build
-            cd /build/{dir_name}
+            HOME={b}
+            cd {d}
             abuild -r -F && \
-            find \"/build/packages/build/{u}\" -name \"{pkg}-*.apk\" -exec apk add --allow-untrusted {{}} \\;",
-            u = app_arch());
+            find \"{f}\" -name \"{pkg}-*.apk\" -exec apk add --allow-untrusted {{}} \\;",
+            b = build_dir.display(),
+            d = build_dir.join(dir_name).display(),
+            f = build_dir
+                .join(format!("packages/build/{}", app_arch()))
+                .display()
+        );
 
         let config = SandBoxConfig {
             rootfs,
             run_cmd,
             use_root: true,
             secure_rootfs: true,
+            use_overlay,
+            action: overlay_action,
+            inode_mode: settings_overlay_inode_mode(),
             ..Default::default()
         };
 

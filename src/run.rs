@@ -4,11 +4,11 @@
 //! override the rootfs path, inject custom bind mounts, and define the
 //! command to be executed within the sandbox.
 
-use crate::settings::settings_rootfs_dir;
+use crate::settings::{
+    settings_overlay_action, settings_overlay_inode_mode, settings_rootfs_dir, settings_use_overlay,
+};
 use crate::utils::map_result;
-use crate::{invalid_arg, parse_value};
-
-use sandbox_utils::{SandBox, SandBoxConfig};
+use sandbox_utils::{invalid_arg, parse_value, OverlayAction, SandBox, SandBoxConfig};
 use std::collections::VecDeque;
 use std::error::Error;
 
@@ -38,13 +38,20 @@ impl Run {
 
         let mut cmd_args = Vec::new();
         let mut args_bind = String::new();
-        let (mut use_root, mut ignore_extra_bind, mut no_group) = (false, false, false);
+        let (mut use_root, mut ignore_extra_bind, mut secure_rootfs) = (false, false, false);
+        let mut use_overlay = settings_use_overlay();
+        let mut overlay_action = settings_overlay_action();
+        let inode_mode = settings_overlay_inode_mode();
 
         while let Some(arg) = args.pop_front() {
             match arg {
                 "-0" | "--root" => use_root = true,
                 "-i" | "--ignore-extra-binds" => ignore_extra_bind = true,
-                "-n" | "--no-groups" => no_group = true,
+                "-s" | "--secure-rootfs" => secure_rootfs = true,
+                "-e" | "--ephemeral" => {
+                    use_overlay = true;
+                    overlay_action = OverlayAction::Discard;
+                }
                 a if a.starts_with("--bind-args=") => {
                     args_bind = parse_value!("run", "parameters", arg)?;
                 }
@@ -88,7 +95,10 @@ impl Run {
             args_bind,
             use_root,
             ignore_extra_bind,
-            no_group,
+            secure_rootfs,
+            use_overlay,
+            inode_mode,
+            action: overlay_action,
             ..Default::default()
         };
 

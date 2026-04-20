@@ -9,7 +9,6 @@ mod aports;
 mod aptree;
 mod builder;
 mod config;
-mod macros;
 mod mirror;
 mod run;
 mod settings;
@@ -24,9 +23,8 @@ use crate::config::Config;
 use crate::run::Run;
 use crate::settings::{settings_cmd, Settings};
 use crate::setup::Setup;
-
 use pico_args::Arguments;
-use sandbox_utils::{app_name, sandbox_init, set_sandbox_tool};
+use sandbox_utils::{app_name, invalid_arg, sandbox_init, set_sandbox_tool};
 use std::env;
 use std::error::Error;
 use std::path::PathBuf;
@@ -79,6 +77,7 @@ Options for 'apk':
 Options for 'aports':
     -u, --update                Update the local aports repository to the latest version
     -s, --search=<PKG>          Search for a package in the Alpine aports
+    -S, --strict-search=<PKG>   Search for a package with an exact name match
     -g, --get=<PKG>             Download the APKBUILD in the Alpine aports
     -R, --rootfs <DIR>          Specify rootfs directory
         --rootfs=<DIR>          Specify rootfs directory (inline)
@@ -86,6 +85,7 @@ Options for 'aports':
 Options for 'aptree':
     -u, --update                Update the local aptree repository to the latest version
     -s, --search=<PKG>          Search for a package in the Adélie aptree
+    -S, --strict-search=<PKG>   Search for a package with an exact name match
     -g, --get=<PKG>             Download the APKBUILD from the Adélie aptree
     -R, --rootfs <DIR>          Specify rootfs directory
         --rootfs=<DIR>          Specify rootfs directory (inline)
@@ -94,13 +94,15 @@ Options for 'builder':
     -a, --apkbuild <APKBUILD>   Use a specific APKBUILD file as input
         --apkbuild=<APKBUILD>   Use a specific APKBUILD file as input (inline)
         --force-key             Force regeneration of RSA signing keys
+    -e, --ephemeral             Use a temporary overlay to discard changes after execution
     -R, --rootfs <DIR>          Specify rootfs directory
         --rootfs=<DIR>          Specify rootfs directory (inline)
 
 Options for 'run':
     -0, --root                  Run with root privileges inside rootfs
     -i, --ignore-extra-binds    Ignore additional bind mounts
-    -n, --no-groups             Do not bind host's passwd and group files
+    -s, --secure-rootfs         Minimal mounting with maximum isolation and restricted integration
+    -e, --ephemeral             Use a temporary overlay to discard changes after execution
     -b, --bind-args <ARGS>      Additional bind arguments (can be inline or next argument)
         --bind-args=<ARGS>      Additional bind arguments (inline)
     -c, --command <CMD>         Command to execute inside rootfs (can be repeated)
@@ -108,7 +110,7 @@ Options for 'run':
     -R, --rootfs <DIR>          Specify rootfs directory
         --rootfs=<DIR>          Specify rootfs directory (inline)
 
-Options for 'config':
+General Options for 'config':
         --use-proot             Use 'proot' as rootfs handler (default)
         --use-bwrap             Use 'bwrap' as rootfs handler
         --use-latest-stable     Use 'latest-stable' release (default)
@@ -121,6 +123,16 @@ Options for 'config':
         --rootfs-dir=<DIR>      Set rootfs directory (inline)
         --default-mirror <URL>  Set default Alpine mirror
         --default-mirror=<URL>  Set default Alpine mirror (inline)
+
+Overlay Options for 'config':
+        --use-overlay | --enable-overlay  Enable OverlayFS to layer changes over the rootfs
+        --disable-overlay                 Disable OverlayFS usage (default)
+        --use-persistent-inode            Use persistent inodes for the overlay layer
+        --use-virtual-inode               Use virtual inodes for the overlay layer (default)
+        --overlay-action-discard          Discard all changes when the session ends
+        --overlay-action-commit           Merge changes back to the rootfs after execution
+        --overlay-action-commit-atomic    Merge changes to the rootfs using an atomic operation
+        --overlay-action-preserve         Preserve the upper layer data without discarding it
 
 Global Options:
     -h, --help                  Show this help message
@@ -196,7 +208,7 @@ fn alpack() -> Result<(), Box<dyn Error>> {
         Some("aptree") => Aptree::new(remaining_args).run(),
         Some("builder") => Builder::new(remaining_args).run(),
         Some("config") => Config::new(remaining_args).run(),
-        Some("run") => Run::new(remaining_args).run(),
+        Some("run") => Run::new(remaining_args).run(), // Todo: -w caminho, --pwd=caminho, --cwd=caminho; --kill-on-exit: limpar processos "órfãos".
         Some("setup") => Setup::new(remaining_args).run(),
 
         Some("-h") | Some("--help") => print_help(app_name()),

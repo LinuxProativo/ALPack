@@ -93,7 +93,8 @@ impl Setup {
         }
 
         if reinstall && rootfs.exists() {
-            fs::remove_dir_all(&rootfs)?;
+            println!("Reinstalling directory '{}'", rootfs.display());
+            obliterate::ensure_removed(&rootfs)?;
         }
 
         if no_cache {
@@ -139,7 +140,7 @@ impl Setup {
                 let _ = fs::remove_dir_all(&cache_dir);
             }
 
-            let repo_path = rootfs.join("etc/apk/repositories");
+            let repo_path = rootfs.join("rootfs/etc/apk/repositories");
             fs::write(&repo_path, mirror.get_repository())?;
 
             let apk_command = if minimal {

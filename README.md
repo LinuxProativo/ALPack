@@ -6,14 +6,19 @@
 <h3 align="center">Manage Alpine Environments and Compile Static Binaries with Ease.</h3>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?&logo=linux&style=flat-square" alt="Platform Linux">
-  <img src="https://img.shields.io/github/actions/workflow/status/LinuxProativo/ALPack/rust.yml?label=Test&style=flat-square&logo=github" alt="Build Status">
-  <img src="https://img.shields.io/badge/Language-Rust_2024-orange?style=flat-square&logo=rust" alt="Rust Version">
-  <img src="https://img.shields.io/badge/Build-Cargo-444444?style=flat-square&logo=rust" alt="Cargo Build">
-  <img src="https://img.shields.io/github/v/release/LinuxProativo/ALPack?color=00599c&label=Release&style=flat-square" alt="Latest Release">
-  <img src="https://img.shields.io/github/last-commit/LinuxProativo/ALPack?color=00599c&label=Last%20Commit&style=flat-square" alt="Last Commit">
-  <img src="https://img.shields.io/github/license/LinuxProativo/ALPack?color=007ec6&label=License&style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?&logo=linux&style=flat-square"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/LinuxProativo/ALPack/rust.yml?label=Test&style=flat-square&logo=github"/>
+  <img src="https://img.shields.io/badge/Language-Rust_2024-orange?style=flat-square&logo=rust"/>
+    <img src="https://img.shields.io/badge/RustC-1.85%2B-orange?style=flat-square&logo=rust"/>
+    <img src="https://img.shields.io/badge/Build-Cargo-444444?style=flat-square&logo=rust&logoColor=white"/>
+  <img src="https://img.shields.io/github/languages/code-size/LinuxProativo/ALPack?style=flat-square&logo=paperlessngx&label=Code%20Size"/>
+  <img src="https://img.shields.io/github/repo-size/LinuxProativo/ALPack?style=flat-square&logo=paperlessngx&label=Repo%20Size"/>
+  <img src="https://img.shields.io/badge/Binary-Static-success?style=flat-square&logo=chainlink&logoColor=white">
+  <img src="https://img.shields.io/github/v/release/LinuxProativo/ALPack?label=Release&style=flat-square&logo=github"/>
+  <img src="https://img.shields.io/github/license/LinuxProativo/ALPack?color=673ab7&label=License&style=flat-square&logo=opensourcehardware&logoColor=white"/>
 </p>
+
+## 🔍 Overview
 
 **ALPack**  is a tool developed in Rust designed to create and manage multiple
 **Alpine Linux rootfs** environments in a practical and reproducible manner.
@@ -30,21 +35,27 @@ utility to a wide range of use cases beyond its core build focus.
 
 ## ✨ Features
 
-- 📦 Easily create and manage **portable Alpine rootfs**.
+- 📦 **Portable Rootfs**: Easily create and manage multiple portable Alpine Linux environments.
 
-- ⚡ Fast and minimal Alpine Linux environment setup;
+- ⚡ **Minimal Setup**: Fast and lightweight initialization of the Alpine ecosystem.
 
-- 🧪 Safe sandboxing for testing or restricted systems;
+- 🧪 **Safe Sandboxing**: Secure environment for testing applications or restricted systems.
 
-- 📁 Support for multiple rootfs directories;
+- 📁 **Multi-Directory Support**: Manage different rootfs instances independently.
 
-- 💪 Ideal for compiling static binaries using musl and Alpine's minimal toolchain.
+- 💪 **Static Compilation**: Optimized for building static binaries using `musl` and Alpine's toolchain.
 
-- 🛠️ Work directly with **APKBUILDs**, simplifying the packaging process.
+- 🛠️ **Build System**: Direct integration with **APKBUILDs** to simplify the packaging process.
 
-- 💼 Run anywhere without complex installation, thanks to its fully **portable design**.
+- 🌌 **OverlayFS Support**: Layer changes over your rootfs to keep the base system clean.
 
-- 🔒 Runs without real root;
+- ⏳ **Ephemeral Sessions**: Automatically discard modifications after execution using the `-e` flag.
+
+- 🔒 **Enhanced Isolation**: Use `-s` for secure, minimal mounting and maximum sandboxing.
+
+- 💼 **Fully Portable**: Run anywhere without complex installation or host dependencies.
+
+- 🔑 **Rootless Execution**: Full functionality without requiring real root privileges.
 
 Lightweight, fast, and productivity-focused, ALPack bridges the gap between Alpine
 Linux flexibility and secure isolated environments.
@@ -144,13 +155,12 @@ tool across any environment without the need to install multiple dependencies;
 - 📌 Alpine Linux includes the necessary static libraries required for `C/C++` to compile
 fully static binaries.
 
+## 📜 MIT License
 
-## 📄 MIT License
-
-This repository has scripts that were created to be free software.
+This repository has scripts created to be free software.  
 Therefore, they can be distributed and/or modified within the terms of the ***MIT License***.
 
-> ### See the [LICENSE](LICENSE) file for details.
+> ### See the [MIT License](LICENSE) file for details.
 
 ## 📬 Contact & Support
 
